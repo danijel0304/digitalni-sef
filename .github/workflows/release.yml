@@ -1,0 +1,56 @@
+name: Izgradi i objavi
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  paket:
+    name: Paket za ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: Windows
+            os: windows-latest
+            separator: ';'
+            archive: digitalni-sef-windows.zip
+          - platform: Linux
+            os: ubuntu-latest
+            separator: ':'
+            archive: digitalni-sef-linux.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Instaliraj alate
+        run: python -m pip install --upgrade pip -r requirements.txt pyinstaller
+      - name: Izgradi aplikaciju
+        run: >-
+          pyinstaller --noconfirm --clean --windowed --name Digitalni-sef
+          --add-data "assets${{ matrix.separator }}assets" app.py
+      - name: Spremi paket
+        shell: bash
+        run: cd dist && zip -r ../${{ matrix.archive }} Digitalni-sef
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+
+  objavi:
+    needs: paket
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+      - name: Izradi GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" release-artifacts/*/* --generate-notes

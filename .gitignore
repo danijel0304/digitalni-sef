@@ -1,0 +1,26 @@
+# Python and local tooling
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.venv/
+venv/
+.env
+.env.*
+.gitlocal/
+
+# Local Digitalni sef data — never commit credentials, encrypted vaults or attachments
+.digitalni_sef/
+.servisni_sef/
+config.json
+vault.json
+catalog.json
+attachments/
+*.backup
+
+# Build outputs and operating-system files
+build/
+dist/
+*.spec
+.DS_Store
+Thumbs.db
