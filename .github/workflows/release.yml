@@ -8,21 +8,9 @@ permissions:
   contents: write
 
 jobs:
-  paket:
-    name: Paket za ${{ matrix.platform }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - platform: Windows
-            os: windows-latest
-            separator: ';'
-            archive: digitalni-sef-windows.zip
-          - platform: Linux
-            os: ubuntu-latest
-            separator: ':'
-            archive: digitalni-sef-linux.zip
-    runs-on: ${{ matrix.os }}
+  windows:
+    name: Windows EXE
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -30,27 +18,65 @@ jobs:
           python-version: '3.12'
       - name: Instaliraj alate
         run: python -m pip install --upgrade pip -r requirements.txt pyinstaller
+      - name: Postavi verziju paketa
+        shell: pwsh
+        run: Set-Content -Path digitalni_sef_version.txt -Value $env:GITHUB_REF_NAME -NoNewline
+      - name: Izgradi EXE
+        shell: pwsh
+        run: >-
+          pyinstaller --noconfirm --clean --onefile --windowed --name Digitalni-sef
+          --add-data "assets;assets" --add-data "digitalni_sef_version.txt;." app.py;
+          New-Item -ItemType Directory -Force release | Out-Null;
+          Copy-Item dist\Digitalni-sef.exe "release\digitalni-sef-$env:GITHUB_REF_NAME-windows-x86_64.exe"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-exe
+          path: release/*.exe
+          if-no-files-found: error
+
+  linux:
+    name: Linux DEB TAR AppImage
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Instaliraj alate
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fakeroot libegl1 libgl1 libxcb-cursor0 libxkbcommon-x11-0 wget
+          python -m pip install --upgrade pip -r requirements.txt pyinstaller
+      - name: Postavi verziju paketa
+        run: printf '%s' "$GITHUB_REF_NAME" > digitalni_sef_version.txt
       - name: Izgradi aplikaciju
         run: >-
           pyinstaller --noconfirm --clean --windowed --name Digitalni-sef
-          --add-data "assets${{ matrix.separator }}assets" app.py
-      - name: Spremi paket
-        shell: pwsh
-        run: Compress-Archive -Path 'dist/Digitalni-sef' -DestinationPath '${{ matrix.archive }}'
+          --add-data "assets:assets" --add-data "digitalni_sef_version.txt:." app.py
+      - name: Preuzmi AppImage alat
+        run: |
+          wget -q -O appimagetool-x86_64.AppImage https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage scripts/build_linux_artifacts.sh
+      - name: Izgradi Linux pakete
+        env:
+          VERSION: ${{ github.ref_name }}
+          APPIMAGETOOL: ${{ github.workspace }}/appimagetool-x86_64.AppImage
+        run: scripts/build_linux_artifacts.sh
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.archive }}
-          path: ${{ matrix.archive }}
+          name: linux-packages
+          path: release/*
           if-no-files-found: error
 
   objavi:
-    needs: paket
+    needs: [windows, linux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: release-artifacts
+          merge-multiple: true
       - name: Izradi GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "${{ github.ref_name }}" release-artifacts/*/* --generate-notes --repo "${{ github.repository }}"
+        run: gh release create "${{ github.ref_name }}" release-artifacts/* --generate-notes --repo "${{ github.repository }}"

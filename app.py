@@ -9,6 +9,7 @@ import calendar
 import json
 import os
 import secrets
+import sys
 import tempfile
 import webbrowser
 from datetime import date, datetime, timedelta
@@ -22,6 +23,7 @@ from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from PIL import Image
 
 from service_catalog import SERVICE_CATALOG
+from self_updater import SelfUpdater
 
 
 APP_DIR = Path.home() / ".digitalni_sef"
@@ -34,13 +36,28 @@ ICON_FILES = {
     "dark": Path(__file__).resolve().parent / "assets" / "digitalni-sef-dark.png",
     "light": Path(__file__).resolve().parent / "assets" / "digitalni-sef-light.png",
 }
-# Optional for private builds. Keep personal payment links out of public source.
-PAYPAL_DONATION_URL = os.environ.get("DIGITALNI_SEF_PAYPAL_URL", "")
+PAYPAL_DONATION_URL = "https://www.paypal.com/paypalme/danijel0304"
+GITHUB_REPO = "danijel0304/digitalni-sef"
 VAULT_CHECK = b"digitalni-sef-check"
 LEGACY_VAULT_CHECK = b"servisni-sef-check"
 BACKUP_VERSION = 1
 CURRENT_LANGUAGE = "hr"
 CATALOG_PAGE_SIZE = 50
+
+
+def app_version() -> str:
+    resource_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    for path in (resource_dir / "digitalni_sef_version.txt", Path(__file__).resolve().parent / "digitalni_sef_version.txt"):
+        try:
+            version = path.read_text(encoding="utf-8").strip()
+            if version:
+                return version
+        except OSError:
+            pass
+    return "v1.0.3"
+
+
+APP_VERSION = app_version()
 
 ENGLISH = {
     "Digitalni sef": "Digital Vault", "Vaši digitalni računi na jednom mjestu": "Your digital accounts in one place",
@@ -82,6 +99,7 @@ ENGLISH = {
     "Postavite glavnu lozinku za vaš novi sef.": "Set the master password for your new vault.",
     "Unesite glavnu lozinku za otključavanje sefa.": "Enter your master password to unlock the vault.",
     "Glavna lozinka se ne može vratiti. Čuvajte je na sigurnom.": "The master password cannot be recovered. Keep it safe.",
+    "Provjeri ažuriranja": "Check for updates",
     "Cjelokupno trajanje pretplate": "Entire subscription term", "Naplata": "Charge", "Istječe": "Expires",
     "Isteklo prije {days} d.": "Expired {days} days ago", "{action} danas": "{action} today", "{action} za {days} d.": "{action} in {days} days", "{action}: {date}": "{action}: {date}",
 }
@@ -1270,6 +1288,8 @@ class DigitalVault(ctk.CTk):
         self.catalog_category_filter = StringVar(value=tr("Sve vrste"))
         self.catalog_page = 0
         self.catalog_render_job = None
+        self.update_button = None
+        self.updater = SelfUpdater(self, APP_VERSION, GITHUB_REPO, lambda: self.update_button, lambda: self.language)
         self.search.trace_add("write", self.on_overview_search)
         self.catalog_search.trace_add("write", self.reset_catalog_page)
         self.title(tr("Digitalni sef"))
@@ -1301,6 +1321,7 @@ class DigitalVault(ctk.CTk):
             widget.destroy()
         self.build_ui()
         self.refresh()
+        self.after(1400, lambda: self.updater.check(manual=False))
 
     def set_language(self, label: str) -> None:
         self.language = "en" if label in ("English", "en") else "hr"
@@ -1360,15 +1381,17 @@ class DigitalVault(ctk.CTk):
         self.reminder_button = ctk.CTkButton(sidebar, text=f"⚠  {tr('Podsjetnici')}", command=lambda: RemindersDialog(self), height=38, corner_radius=9,
                                              fg_color=COLORS["sidebar_card"], hover_color=COLORS["panel_hover"], text_color=COLORS["text"], font=("Arial", 12, "bold"))
         self.reminder_button.pack(side="bottom", fill="x", padx=17, pady=(0, 10))
+        self.update_button = ctk.CTkButton(sidebar, text=f"↻  {tr('Provjeri ažuriranja')}", command=self.updater.check, height=35, corner_radius=9,
+                                           fg_color=COLORS["panel_hover"], hover_color=COLORS["border"], text_color=COLORS["text"], font=("Arial", 11, "bold"))
+        self.update_button.pack(side="bottom", fill="x", padx=17, pady=(0, 7))
         ctk.CTkButton(sidebar, text=f"↧  {tr('Vrati kopiju')}", command=self.restore_backup, height=35, corner_radius=9,
                       fg_color=COLORS["panel_hover"], hover_color=COLORS["border"], text_color=COLORS["text"], font=("Arial", 11, "bold")).pack(side="bottom", fill="x", padx=17, pady=(0, 7))
         ctk.CTkButton(sidebar, text=f"↥  {tr('Sigurnosna kopija')}", command=self.create_backup, height=35, corner_radius=9,
                       fg_color=COLORS["panel_hover"], hover_color=COLORS["border"], text_color=COLORS["text"], font=("Arial", 11, "bold")).pack(side="bottom", fill="x", padx=17, pady=(0, 7))
         ctk.CTkButton(sidebar, text=f"☀  {tr('Svijetla tema')}" if self.theme == "dark" else f"◐  {tr('Tamna tema')}", command=self.toggle_theme,
                       height=38, corner_radius=9, fg_color=COLORS["panel_hover"], hover_color=COLORS["border"], text_color=COLORS["text"], font=("Arial", 12, "bold")).pack(side="bottom", fill="x", padx=17, pady=(0, 10))
-        if PAYPAL_DONATION_URL:
-            ctk.CTkButton(sidebar, text="♥  Doniraj putem PayPala", command=lambda: webbrowser.open(PAYPAL_DONATION_URL),
-                          height=38, corner_radius=9, fg_color="#0070BA", hover_color="#005EA6", text_color="#FFFFFF", font=("Arial", 12, "bold")).pack(side="bottom", fill="x", padx=17, pady=(0, 10))
+        ctk.CTkButton(sidebar, text="♥  Doniraj putem PayPala", command=lambda: webbrowser.open(PAYPAL_DONATION_URL),
+                      height=38, corner_radius=9, fg_color="#0070BA", hover_color="#005EA6", text_color="#FFFFFF", font=("Arial", 12, "bold")).pack(side="bottom", fill="x", padx=17, pady=(0, 10))
         security = ctk.CTkFrame(sidebar, fg_color=COLORS["sidebar_card"], corner_radius=12)
         security.pack(side="bottom", fill="x", padx=17, pady=22)
         ctk.CTkLabel(security, text="🔒  Lokalno šifrirano", font=("Arial", 12, "bold"), text_color=COLORS["success"]).pack(anchor="w", padx=13, pady=(12, 2))

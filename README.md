@@ -23,6 +23,8 @@ U repozitorij se ne spremaju podaci sefa, šifrirani privici, lokalne postavke n
 
 GitHub Actions provjerava svaki commit na grani `main`. Za izradu instalacijskih paketa za Windows i Linux te novog GitHub Releasea izradite i pošaljite oznaku verzije, primjerice `v1.0.0`.
 
+Instalirana verzija aplikacije provjerava najnoviji GitHub Release pri pokretanju. U bočnoj traci možete i ručno pokrenuti provjeru; kada postoji odgovarajući Windows ili Linux paket, aplikacija ga može preuzeti, zamijeniti i ponovno pokrenuti.
+
 Ako se glavna lozinka zaboravi, na ekranu za otključavanje postoji opcija za izradu novog sefa. To je namjerno sigurnosno rješenje: glavna lozinka se ne čuva niti šalje e-poštom, pa se postojeći šifrirani podaci ne mogu vratiti; prije brisanja sef traži dvije potvrde.
 
 ## Mogućnosti

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Digitalni sef
+Comment=Lokalno šifrirani digitalni sef
+Exec=digitalni-sef
+Icon=digitalni-sef
+Categories=Utility;Security;
+Terminal=false
