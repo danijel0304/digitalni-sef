@@ -2,6 +2,8 @@
 
 Moderna desktop aplikacija za lokalno čuvanje podataka o pretplatama, streaming servisima, AI alatima i drugim digitalnim računima.
 
+![Glavni prozor Digitalnog sefa](docs/screenshots/main-window.png)
+
 ## Pokretanje
 
 ```bash
