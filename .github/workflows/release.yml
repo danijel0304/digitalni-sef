@@ -35,8 +35,8 @@ jobs:
           pyinstaller --noconfirm --clean --windowed --name Digitalni-sef
           --add-data "assets${{ matrix.separator }}assets" app.py
       - name: Spremi paket
-        shell: bash
-        run: cd dist && zip -r ../${{ matrix.archive }} Digitalni-sef
+        shell: pwsh
+        run: Compress-Archive -Path 'dist/Digitalni-sef' -DestinationPath '${{ matrix.archive }}'
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.archive }}
