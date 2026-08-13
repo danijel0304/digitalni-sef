@@ -3,5 +3,5 @@ Version: @VERSION@
 Section: utils
 Priority: optional
 Architecture: amd64
-Maintainer: Digitalni sef
-Description: Lokalno šifrirani digitalni sef za račune i pretplate
+Maintainer: Digital Vault
+Description: Local encrypted vault for subscriptions, accounts and receipts

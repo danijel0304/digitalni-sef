@@ -7,7 +7,7 @@ VERSION="${VERSION:?VERSION must be set}"
 VERSION_NUMBER="${VERSION#v}"
 RELEASE_DIR="release"
 
-rm -rf build/deb-root build/AppDir build/tar-root
+rm -rf build/deb-root build/AppDir build/tar-root build/rpm
 mkdir -p "$RELEASE_DIR" build/tar-root build/deb-root/DEBIAN build/deb-root/usr/lib/digitalni-sef \
   build/deb-root/usr/bin build/deb-root/usr/share/applications build/deb-root/usr/share/icons/hicolor/256x256/apps
 
@@ -20,6 +20,14 @@ install -Dm644 packaging/digitalni-sef.desktop build/deb-root/usr/share/applicat
 install -Dm644 assets/digitalni-sef.png build/deb-root/usr/share/icons/hicolor/256x256/apps/digitalni-sef.png
 sed "s/@VERSION@/$VERSION_NUMBER/" packaging/debian-control > build/deb-root/DEBIAN/control
 dpkg-deb --build build/deb-root "$RELEASE_DIR/$PACKAGE_NAME-$VERSION-linux-amd64.deb"
+
+rpmbuild -bb \
+  --define "_topdir $(pwd)/build/rpm" \
+  --define "_sourcedir $(pwd)" \
+  --define "version $VERSION_NUMBER" \
+  packaging/digitalni-sef.spec
+cp "build/rpm/RPMS/x86_64/$PACKAGE_NAME-$VERSION_NUMBER-1.x86_64.rpm" \
+  "$RELEASE_DIR/$PACKAGE_NAME-$VERSION-linux-x86_64.rpm"
 
 APPDIR="build/AppDir"
 mkdir -p "$APPDIR/usr/lib/digitalni-sef" "$APPDIR/usr/bin"

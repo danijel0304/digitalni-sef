@@ -35,7 +35,7 @@ jobs:
           if-no-files-found: error
 
   linux:
-    name: Linux DEB TAR AppImage
+    name: Linux DEB RPM TAR AppImage
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
@@ -45,7 +45,7 @@ jobs:
       - name: Instaliraj alate
         run: |
           sudo apt-get update
-          sudo apt-get install -y fakeroot libegl1 libgl1 libxcb-cursor0 libxkbcommon-x11-0 wget
+          sudo apt-get install -y fakeroot libegl1 libgl1 libxcb-cursor0 libxkbcommon-x11-0 rpm wget
           python -m pip install --upgrade pip -r requirements.txt pyinstaller
       - name: Postavi verziju paketa
         run: printf '%s' "$GITHUB_REF_NAME" > digitalni_sef_version.txt

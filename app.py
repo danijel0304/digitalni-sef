@@ -41,7 +41,7 @@ GITHUB_REPO = "danijel0304/digitalni-sef"
 VAULT_CHECK = b"digitalni-sef-check"
 LEGACY_VAULT_CHECK = b"servisni-sef-check"
 BACKUP_VERSION = 1
-CURRENT_LANGUAGE = "hr"
+CURRENT_LANGUAGE = "en"
 CATALOG_PAGE_SIZE = 50
 
 
@@ -274,9 +274,9 @@ class Vault:
 
     def language(self) -> str:
         try:
-            return json.loads(CONFIG_FILE.read_text(encoding="utf-8")).get("language", "hr")
+            return json.loads(CONFIG_FILE.read_text(encoding="utf-8")).get("language", "en")
         except (OSError, json.JSONDecodeError):
-            return "hr"
+            return "en"
 
     def save_language(self, language: str) -> None:
         try:
@@ -1274,7 +1274,7 @@ class DigitalVault(ctk.CTk):
         super().__init__()
         self.vault, self.records = Vault(), []
         self.app_icon = None
-        self.language = self.vault.language() if self.vault.initialized else "hr"
+        self.language = self.vault.language() if self.vault.initialized else "en"
         global CURRENT_LANGUAGE
         CURRENT_LANGUAGE = self.language
         self.theme = self.vault.theme() if self.vault.initialized else "dark"

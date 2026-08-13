@@ -22,5 +22,6 @@ attachments/
 build/
 dist/
 *.spec
+!packaging/digitalni-sef.spec
 .DS_Store
 Thumbs.db

@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
-Name=Digitalni sef
-Comment=Lokalno šifrirani digitalni sef
+Name=Digital Vault
+Comment=Local encrypted vault for subscriptions and accounts
 Exec=digitalni-sef
 Icon=digitalni-sef
 Categories=Utility;Security;
