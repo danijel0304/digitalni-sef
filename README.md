@@ -1,56 +1,38 @@
-# Digitalni sef
+# Digital Vault
 
-Moderna desktop aplikacija za lokalno čuvanje podataka o pretplatama, streaming servisima, AI alatima i drugim digitalnim računima.
+Digital Vault is a private, local-first desktop application for tracking subscriptions, online accounts, passwords, purchase links, receipts, warranties, and renewal reminders.
 
-![Glavni prozor Digitalnog sefa](docs/screenshots/main-window.png)
+![Digital Vault main window](docs/screenshots/main-window.png)
 
-## Pokretanje
+## Highlights
+
+- Encrypted local vault protected by a master password.
+- English user interface by default; Croatian is available from the app.
+- Subscription costs, billing cycle, auto-renewal, and upcoming-payment reminders.
+- IPTV records can store, open, and quickly copy a playlist or server URL.
+- Purchase dates, expiry dates, seller warranties, receipts, notes, and seller contact links.
+- Searchable service catalog, encrypted attachments, backups, restore, light/dark themes, and update checks.
+
+## Run from source
 
 ```bash
 python3 -m pip install -r requirements.txt
 python3 app.py
 ```
 
-Jednostavnije: na Linuxu pokrenite `./pokreni.sh`, a na Windowsu dvaput kliknite `pokreni.bat`. Pokretači će po potrebi sami instalirati biblioteke.
+On Linux, `./pokreni.sh` installs missing Python dependencies and starts the app. On Windows, use `pokreni.bat`.
 
-Pri prvom pokretanju odaberite glavnu lozinku (najmanje 8 znakova). Ona šifrira sve spremljene lozinke, pa je nije moguće vratiti ako se zaboravi.
+Your vault data is stored only on your computer in `~/.digitalni_sef`. The master password is never stored or sent anywhere; if it is forgotten, encrypted data cannot be recovered.
 
-Podaci se čuvaju samo na računalu, u mapi `~/.digitalni_sef`. Pri prvom pokretanju nove verzije stara mapa `~/.servisni_sef` automatski se premješta u novu mapu. Aplikacija ne šalje lozinke ni druge podatke na internet.
+## Downloads
 
-## Privatnost izvornog koda
+Every release includes packages for:
 
-U repozitorij se ne spremaju podaci sefa, šifrirani privici, lokalne postavke ni sigurnosne kopije. To je osigurano datotekom `.gitignore`; prije slanja promjena ipak provjerite `git status`.
+- Windows: EXE
+- Linux: AppImage, DEB, TAR.GZ, and Fedora RPM
 
-## Izdavanja
+Download the latest version from [GitHub Releases](https://github.com/danijel0304/digitalni-sef/releases).
 
-GitHub Actions provjerava svaki commit na grani `main`. Za izradu instalacijskih paketa za Windows i Linux te novog GitHub Releasea izradite i pošaljite oznaku verzije, primjerice `v1.0.0`.
+## Privacy
 
-Instalirana verzija aplikacije provjerava najnoviji GitHub Release pri pokretanju. U bočnoj traci možete i ručno pokrenuti provjeru; kada postoji odgovarajući Windows ili Linux paket, aplikacija ga može preuzeti, zamijeniti i ponovno pokrenuti.
-
-Ako se glavna lozinka zaboravi, na ekranu za otključavanje postoji opcija za izradu novog sefa. To je namjerno sigurnosno rješenje: glavna lozinka se ne čuva niti šalje e-poštom, pa se postojeći šifrirani podaci ne mogu vratiti; prije brisanja sef traži dvije potvrde.
-
-## Mogućnosti
-
-- evidencija korisničkog imena, lozinke, prodavatelja i bilješki
-- datum kupnje, istek pretplate i rok jamstva prodavatelja
-- poveznice na kupnju i razgovor s prodavateljem
-- pregled usluga kojima rok uskoro istječe
-- cijena, valuta, učestalost naplate i automatska obnova pretplate
-- mjesečni pregled troškova te filtri po kategoriji i statusu usluge
-- zasebne stranice za pregled, katalog usluga i potrošnju po kategoriji
-- katalog s više od 1.000 popularnih usluga, uključujući upload i dijeljenje datoteka (WeTransfer, SwissTransfer, MASV, Filemail i druge)
-- brzo dodavanje iz kataloga, koje unaprijed popunjava naziv i kategoriju u obrascu
-- ugrađeni uređivač kataloga za dodavanje, promjenu kategorije i uklanjanje prijedloga
-- brzo stranicenje kataloga (50 stavki po stranici) i odgođena pretraga za ugodan rad s velikim katalogom
-- osobni podsjetnici prije isteka pretplate, jamstva ili sljedeće naplate
-- šifrirana sigurnosna kopija i vraćanje zapisa zajedno s privicima
-- brzo kopiranje korisničkog imena i lozinke te zaštita od slučajnih duplikata
-- šifrirani privici za račune, PDF-ove i druge dokumente
-- pretraga i jednostavno uređivanje ili brisanje zapisa
-- svijetla i tamna tema s pripadajućom ikonom; promjena je trenutačna i izbor se pamti
-- hrvatsko i englesko sučelje koje se može promijeniti tijekom rada aplikacije
-- ugrađena profesionalna ikona aplikacije i dobrovoljna PayPal donacija
-
-## Katalog usluga
-
-Popis ugrađenih prijedloga nalazi se u datoteci `service_catalog.py`, odvojeno od glavnog koda sučelja. U aplikaciji otvorite **Katalog usluga → Uredi katalog** za jednostavno dodavanje, promjenu ili uklanjanje stavke; lokalne izmjene spremaju se u `~/.digitalni_sef/catalog.json`. Svaku novu ugrađenu uslugu možete dodati i ručno kao stavku u `SERVICE_CATALOG` u obliku `"Naziv": "Kategorija"`.
+Local vault records, settings, backups, and encrypted attachments are excluded from this repository through `.gitignore`.

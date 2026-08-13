@@ -74,6 +74,7 @@ ENGLISH = {
     "UKUPNO USLUGA": "TOTAL SERVICES", "MJ. TROŠAK": "MONTHLY COST", "ISTJEČE U 30 DANA": "EXPIRES IN 30 DAYS",
     "Nema roka": "No deadline", "Lozinka nije spremljena": "No password saved", "Nema dodatnih podataka": "No additional details",
     "Kupnja": "Purchase", "Chat": "Chat", "E-mail": "Email", "Lozinka": "Password", "Korisničko ime": "Username",
+    "IPTV URL adresa": "IPTV URL address", "Otvori IPTV": "Open IPTV",
     "Detalji spremljene usluge": "Saved service details", "Kategorija": "Category", "Prodavatelj": "Seller", "Kupljeno": "Purchased",
     "Korisničko ime prodavatelja": "Seller username", "Pretplata vrijedi do": "Subscription valid until", "Jamstvo vrijedi do": "Warranty valid until",
     "Trošak": "Cost", "Bilješke": "Notes", "Nema bilješki.": "No notes.", "Privici": "Attachments", "Privitak": "Attachment",
@@ -81,7 +82,7 @@ ENGLISH = {
     "Trošak i obnova": "Cost & renewal", "Podaci služe za pregled troškova i podsjetnike.": "Used for cost summaries and reminders.",
     "Cijena po naplati": "Price per charge", "Valuta": "Currency", "Učestalost naplate": "Billing frequency", "Mjesečno": "Monthly",
     "Godišnje": "Yearly", "Jednokratno": "One-time", "Da": "Yes", "Ne": "No", "Sljedeća naplata": "Next charge",
-    "Podsjetnik": "Reminder", "Bez podsjetnika": "No reminder", "dana prije": "days before", "Podsjetnik dana prije": "Reminder days before", "Spremi postavke": "Save settings",
+    "Podsjetnik": "Reminder", "Bez podsjetnika": "No reminder", "dana prije": "days before", "Podsjetnik dana prije": "Reminder days before", "Spremi postavke": "Save settings", "Dodaj cijenu": "Add price",
     "Dodaj račun / PDF": "Add receipt / PDF", "Privici ({count})": "Attachments ({count})", "Postavi datum": "Set date", "Jamstvo": "Warranty",
     "Trajanje od kupnje": "Duration from purchase", "mjesec(i)": "month(s)", "godina(e)": "year(s)", "dana": "days",
     "Naziv usluge * — pišite za prijedloge": "Service name * — type for suggestions", "Polja označena zvjezdicom su obavezna.": "Fields marked with an asterisk are required.",
@@ -101,7 +102,7 @@ ENGLISH = {
     "Glavna lozinka se ne može vratiti. Čuvajte je na sigurnom.": "The master password cannot be recovered. Keep it safe.",
     "Provjeri ažuriranja": "Check for updates",
     "Cjelokupno trajanje pretplate": "Entire subscription term", "Naplata": "Charge", "Istječe": "Expires",
-    "Isteklo prije {days} d.": "Expired {days} days ago", "{action} danas": "{action} today", "{action} za {days} d.": "{action} in {days} days", "{action}: {date}": "{action}: {date}",
+    "Isteklo prije {days} d.": "Expired {days} days ago", "{action} danas": "{action} today", "{action} za {days} d.": "{action} in {days} days", "{action} za {days} d. · {date}": "{action} in {days} days · {date}", "{action}: {date}": "{action}: {date}",
 }
 
 
@@ -632,7 +633,7 @@ class SubscriptionOptionsDialog(ctk.CTkToplevel):
         self.title(tr("Trošak i obnova"))
         if dialog.app.app_icon:
             self.iconphoto(True, dialog.app.app_icon)
-        self.geometry("500x490")
+        self.geometry("500x545")
         self.resizable(False, False)
         self.configure(fg_color=COLORS["bg"])
 
@@ -645,16 +646,33 @@ class SubscriptionOptionsDialog(ctk.CTkToplevel):
         row = ctk.CTkFrame(card, fg_color="transparent")
         row.pack(fill="x", padx=24, pady=3)
         self.price = self.add_entry(row, "Cijena po naplati", "npr. 9,99", values.get("price", ""), "left")
-        self.currency = self.add_option(row, "Valuta", ["EUR", "USD", "GBP"], values.get("currency", "EUR"), "right")
+        ctk.CTkButton(card, text="Dodaj cijenu", command=lambda: self.apply(save_record=True), height=40, corner_radius=9,
+                      fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], font=("Arial", 12, "bold")).pack(fill="x", padx=24, pady=(8, 10))
+        auto_renew_row = ctk.CTkFrame(card, fg_color="transparent")
+        auto_renew_row.pack(fill="x", padx=24, pady=3)
+        ctk.CTkLabel(auto_renew_row, text="Automatska obnova", font=("Arial", 10, "bold"), text_color=COLORS["muted"]).pack(anchor="w", pady=(0, 3))
+        self.auto_renew = StringVar(value=tr(values.get("auto_renew", "Ne")))
+        renewal_buttons = ctk.CTkFrame(auto_renew_row, fg_color="transparent")
+        renewal_buttons.pack(fill="x")
+        def choose_auto_renew(value: str) -> None:
+            self.auto_renew.set(tr(value))
+            no_button.configure(fg_color=COLORS["accent"] if value == "Ne" else COLORS["panel_hover"])
+            yes_button.configure(fg_color=COLORS["accent"] if value == "Da" else COLORS["panel_hover"])
+        no_button = ctk.CTkButton(renewal_buttons, text="Ne", command=lambda: choose_auto_renew("Ne"), height=34, corner_radius=9,
+                                  fg_color=COLORS["accent"] if values.get("auto_renew", "Ne") != "Da" else COLORS["panel_hover"], hover_color=COLORS["accent_hover"])
+        no_button.pack(side="left", expand=True, fill="x", padx=(0, 4))
+        yes_button = ctk.CTkButton(renewal_buttons, text="Da", command=lambda: choose_auto_renew("Da"), height=34, corner_radius=9,
+                                   fg_color=COLORS["accent"] if values.get("auto_renew") == "Da" else COLORS["panel_hover"], hover_color=COLORS["accent_hover"])
+        yes_button.pack(side="left", expand=True, fill="x", padx=(4, 0))
         row = ctk.CTkFrame(card, fg_color="transparent")
         row.pack(fill="x", padx=24, pady=3)
-        self.cycle = self.add_option(row, "Učestalost naplate", ["Mjesečno", "Godišnje", "Jednokratno"], values.get("billing_cycle", "Mjesečno"), "left")
-        self.auto_renew = self.add_option(row, "Automatska obnova", ["Ne", "Da"], values.get("auto_renew", "Ne"), "right")
+        self.currency = self.add_option(row, "Valuta", ["EUR", "USD", "GBP"], values.get("currency", "EUR"), "left")
+        self.cycle = self.add_option(row, "Učestalost naplate", ["Mjesečno", "Godišnje", "Jednokratno"], values.get("billing_cycle", "Mjesečno"), "right")
         row = ctk.CTkFrame(card, fg_color="transparent")
         row.pack(fill="x", padx=24, pady=3)
         self.renewal_date = self.add_date(row, "Sljedeća naplata", values.get("renewal_date", ""), "left")
         self.reminder_days = self.add_option(row, "Podsjetnik", ["Bez podsjetnika", "3", "7", "14", "30"], values.get("reminder_days", "7"), "right", suffix=" dana prije")
-        ctk.CTkButton(card, text="Spremi postavke", command=self.apply, height=40, corner_radius=9,
+        ctk.CTkButton(card, text="Spremi dodatne postavke", command=lambda: self.apply(save_record=True), height=40, corner_radius=9,
                       fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], font=("Arial", 12, "bold")).pack(fill="x", padx=24, pady=(22, 6))
         self.wait_visibility()
         self.grab_set()
@@ -691,21 +709,27 @@ class SubscriptionOptionsDialog(ctk.CTkToplevel):
             self.dialog.set_date(field, parse_date(value))
         return field
 
-    def apply(self) -> None:
+    def apply(self, save_record: bool = False) -> bool:
         price = self.price.get().strip()
         if price and parse_price(price) is None:
             messagebox.showwarning("Neispravna cijena", "Cijenu upišite kao npr. 9,99.", parent=self)
-            return
-        renewal = self.renewal_date.get().strip()
+            return False
+        previous = self.dialog.subscription_values
+        renewal = self.renewal_date.get().strip() if hasattr(self, "renewal_date") else previous.get("renewal_date", "")
         if renewal and not parse_date(renewal):
             messagebox.showwarning("Neispravan datum", "Odaberite datum sljedeće naplate u kalendaru.", parent=self)
-            return
+            return False
         self.dialog.subscription_values = {
-            "price": price, "currency": self.currency.get(), "billing_cycle": original_text(self.cycle.get()),
-            "auto_renew": original_text(self.auto_renew.get()), "renewal_date": renewal, "reminder_days": original_text(self.reminder_days.get()),
+            "price": price, "currency": self.currency.get() if hasattr(self, "currency") else previous.get("currency", "EUR"),
+            "billing_cycle": original_text(self.cycle.get()) if hasattr(self, "cycle") else previous.get("billing_cycle", "Mjesečno"),
+            "auto_renew": original_text(self.auto_renew.get()), "renewal_date": renewal,
+            "reminder_days": original_text(self.reminder_days.get()) if hasattr(self, "reminder_days") else previous.get("reminder_days", "7"),
         }
         self.dialog.update_subscription_button()
         self.destroy()
+        if save_record:
+            self.dialog.save()
+        return True
 
 
 class RecordDialog(ctk.CTkToplevel):
@@ -728,9 +752,8 @@ class RecordDialog(ctk.CTkToplevel):
         self.attachments = list(record.get("attachments", [])) if record else []
         self.pending_attachments: list[str] = []
 
-        # Obični okvir umjesto pomičnog dijela: pouzdan je na svim kombinacijama
-        # CustomTkintera i Linux desktopa te se obrazac uvijek nacrta odmah.
-        outer = ctk.CTkFrame(self, fg_color=COLORS["bg"], corner_radius=0)
+        outer = ctk.CTkScrollableFrame(self, width=670, height=680, fg_color=COLORS["bg"], corner_radius=0,
+                                       scrollbar_button_color=COLORS["border"], scrollbar_button_hover_color=COLORS["accent"])
         outer.pack(expand=True, fill="both", padx=20, pady=16)
         ctk.CTkLabel(outer, text="Uredi podatke" if record else "Nova usluga", font=("Arial", 21, "bold"), text_color=COLORS["text"]).pack(anchor="w", pady=(1, 1))
         ctk.CTkLabel(outer, text="Polja označena zvjezdicom su obavezna.", text_color=COLORS["muted"], font=("Arial", 11)).pack(anchor="w", pady=(0, 7))
@@ -748,6 +771,8 @@ class RecordDialog(ctk.CTkToplevel):
         row.pack(fill="x", pady=1)
         self.add_field(row, "login", "E-mail / korisničko ime", "ime@primjer.hr", side="left")
         self.add_field(row, "password", "Lozinka", "Ostavite prazno ako je ne mijenjate", secret=True, side="right")
+        self.iptv_url_frame = self.add_field(row, "iptv_url", "IPTV URL adresa", "http:// ili https://", side="right")
+        self.iptv_url_frame.pack_forget()
         row = ctk.CTkFrame(outer, fg_color="transparent")
         row.pack(fill="x", pady=1)
         self.add_field(row, "purchase_date", "Kupljeno (DD.MM.GGGG.)", "DD.MM.GGGG.", side="left", date_picker=True)
@@ -766,6 +791,7 @@ class RecordDialog(ctk.CTkToplevel):
         row.pack(fill="x", pady=1)
         self.add_field(row, "seller_warranty", "Jamstvo prodavatelja vrijedi do", "DD.MM.GGGG.", side="left", date_picker=True)
         self.add_field(row, "category", "Kategorija", "Streaming, AI, Cloud...", side="right")
+        self.fields["category"].bind("<KeyRelease>", self.update_iptv_url_field, add="+")
         row = ctk.CTkFrame(outer, fg_color="transparent")
         row.pack(fill="x", pady=1)
         self.add_field(row, "seller", "Prodavatelj / gdje je kupljeno", "npr. službena stranica", side="left")
@@ -803,6 +829,7 @@ class RecordDialog(ctk.CTkToplevel):
                     field.insert(0, value)
             if record:
                 self.notes.insert("1.0", record.get("notes", ""))
+        self.update_iptv_url_field()
 
         self.wait_visibility()
         self.grab_set()
@@ -835,7 +862,16 @@ class RecordDialog(ctk.CTkToplevel):
         self.fields["name"].insert(0, name)
         self.fields["category"].delete(0, END)
         self.fields["category"].insert(0, category)
+        self.update_iptv_url_field()
         self.show_hint(f"Odabrano: {name} · {category}")
+
+    def update_iptv_url_field(self, _event=None) -> None:
+        is_iptv = "iptv" in self.fields["category"].get().casefold()
+        shown = self.iptv_url_frame.winfo_manager() == "pack"
+        if is_iptv and not shown:
+            self.iptv_url_frame.pack(side="right", expand=True, fill="x", padx=(7, 0))
+        elif not is_iptv and shown:
+            self.iptv_url_frame.pack_forget()
 
     def show_hint(self, text: str) -> None:
         for child in self.suggestions.winfo_children():
@@ -943,6 +979,7 @@ class RecordDialog(ctk.CTkToplevel):
             eye.configure(command=lambda target=field, control=eye: self.toggle_password(target, control))
             eye.pack(side="right", padx=(4, 0))
         self.fields[key] = field
+        return frame
 
     def save(self):
         values = {key: field.get().strip() for key, field in self.fields.items()}
@@ -953,7 +990,7 @@ class RecordDialog(ctk.CTkToplevel):
             if values[key] and not parse_date(values[key]):
                 messagebox.showwarning("Neispravan datum", f"Polje „{key}” mora biti u formatu GGGG-MM-DD.", parent=self)
                 return
-        for key in ("purchase_url", "chat_url"):
+        for key in ("purchase_url", "chat_url", "iptv_url"):
             if values[key] and not values[key].startswith(("https://", "http://")):
                 messagebox.showwarning("Neispravna poveznica", "Poveznice moraju početi s https:// ili http://", parent=self)
                 return
@@ -990,7 +1027,7 @@ class RecordDetailsDialog(ctk.CTkToplevel):
         self.title(record["name"])
         if app.app_icon:
             self.iconphoto(True, app.app_icon)
-        self.geometry("700x710")
+        self.geometry("700x770")
         self.resizable(False, False)
         self.configure(fg_color=COLORS["bg"])
         self.transient(app)
@@ -1007,6 +1044,8 @@ class RecordDetailsDialog(ctk.CTkToplevel):
         self.add_pair(outer, "Kategorija", record.get("category", ""), "Prodavatelj", record.get("seller", ""))
         self.add_pair(outer, "Korisničko ime prodavatelja", record.get("seller_username", ""), "Kupljeno", date_text(record.get("purchase_date", "")))
         self.add_pair(outer, "Pretplata vrijedi do", date_text(record.get("expiry_date", "")), "Jamstvo vrijedi do", date_text(record.get("seller_warranty", "")))
+        if record.get("iptv_url"):
+            self.add_full_value(outer, "IPTV URL adresa", record["iptv_url"])
         price = parse_price(str(record.get("price", "")))
         price_text = f"{format_money(price, record.get('currency', 'EUR'))} · {tr(record.get('billing_cycle', 'Mjesečno')).lower()}" if price is not None else "—"
         auto_renew = tr("Da") if record.get("auto_renew") == "Da" else tr("Ne")
@@ -1041,6 +1080,12 @@ class RecordDetailsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(frame, text=value or "—", font=("Arial", 12), text_color=COLORS["text"], anchor="w").pack(fill="x", padx=11, pady=(0, 7))
         return frame
 
+    def add_full_value(self, parent, label: str, value: str) -> None:
+        frame = ctk.CTkFrame(parent, fg_color=COLORS["panel"], corner_radius=9)
+        frame.pack(fill="x", pady=3)
+        ctk.CTkLabel(frame, text=label, font=("Arial", 10, "bold"), text_color=COLORS["muted"]).pack(anchor="w", padx=11, pady=(7, 0))
+        ctk.CTkLabel(frame, text=value or "—", font=("Arial", 12), text_color=COLORS["text"], anchor="w").pack(fill="x", padx=11, pady=(0, 7))
+
     def add_credentials(self, parent) -> None:
         row = ctk.CTkFrame(parent, fg_color="transparent")
         row.pack(fill="x", pady=3)
@@ -1064,6 +1109,9 @@ class RecordDetailsDialog(ctk.CTkToplevel):
     def add_links(self, parent) -> None:
         links = ctk.CTkFrame(parent, fg_color="transparent")
         links.pack(fill="x", pady=(10, 0))
+        if self.record.get("iptv_url"):
+            ctk.CTkButton(links, text="↗ Otvori IPTV", command=lambda: webbrowser.open(self.record["iptv_url"]), height=31, corner_radius=8, fg_color=COLORS["panel_hover"], hover_color=COLORS["border"], text_color=COLORS["text"], font=("Arial", 11, "bold")).pack(side="left", padx=(0, 5))
+            ctk.CTkButton(links, text="⧉ IPTV URL", command=lambda: self.app.copy_to_clipboard(self.record["iptv_url"], "IPTV URL"), height=31, corner_radius=8, fg_color=COLORS["panel_hover"], hover_color=COLORS["border"], text_color=COLORS["text"], font=("Arial", 11, "bold")).pack(side="left", padx=5)
         if self.record.get("purchase_url"):
             ctk.CTkButton(links, text="↗ Otvori kupnju", command=lambda: webbrowser.open(self.record["purchase_url"]), height=31, corner_radius=8, fg_color=COLORS["panel_hover"], hover_color=COLORS["border"], text_color=COLORS["text"], font=("Arial", 11, "bold")).pack(side="left", padx=(0, 5))
         if self.record.get("chat_url"):
@@ -1281,6 +1329,7 @@ class DigitalVault(ctk.CTk):
         self.apply_theme(self.theme)
         self.selected_id: str | None = None
         self.active_page = "overview"
+        self.stats_filter = "all"
         self.search = StringVar()
         self.category_filter = StringVar(value=tr("Sve kategorije"))
         self.status_filter = StringVar(value=tr("Sve usluge"))
@@ -1292,6 +1341,9 @@ class DigitalVault(ctk.CTk):
         self.updater = SelfUpdater(self, APP_VERSION, GITHUB_REPO, lambda: self.update_button, lambda: self.language)
         self.search.trace_add("write", self.on_overview_search)
         self.catalog_search.trace_add("write", self.reset_catalog_page)
+        self.bind_all("<MouseWheel>", self.scroll_overview_with_mouse, add="+")
+        self.bind_all("<Button-4>", self.scroll_overview_with_mouse, add="+")
+        self.bind_all("<Button-5>", self.scroll_overview_with_mouse, add="+")
         self.title(tr("Digitalni sef"))
         self.geometry("1180x730")
         self.minsize(980, 620)
@@ -1347,6 +1399,29 @@ class DigitalVault(ctk.CTk):
     def on_overview_search(self, *_args) -> None:
         if self.active_page == "overview" and hasattr(self, "listing"):
             self.render_cards()
+
+    @staticmethod
+    def is_widget_inside(widget, ancestor) -> bool:
+        while widget is not None:
+            if widget == ancestor:
+                return True
+            widget = getattr(widget, "master", None)
+        return False
+
+    def scroll_overview_with_mouse(self, event):
+        if self.active_page != "overview" or not hasattr(self, "listing") or not hasattr(self, "content") or not self.is_widget_inside(event.widget, self.content):
+            return None
+        try:
+            if getattr(event, "num", None) == 4 or getattr(event, "delta", 0) > 0:
+                amount = -3
+            elif getattr(event, "num", None) == 5 or getattr(event, "delta", 0) < 0:
+                amount = 3
+            else:
+                return None
+            self.listing._parent_canvas.yview_scroll(amount, "units")
+            return "break"
+        except (AttributeError, TclError):
+            return None
 
     def reset_catalog_page(self, *_args) -> None:
         self.catalog_page = 0
@@ -1435,7 +1510,7 @@ class DigitalVault(ctk.CTk):
         self.category_menu = ctk.CTkOptionMenu(controls, variable=self.category_filter, values=[tr("Sve kategorije")], command=lambda _value: self.render_cards(), width=145, height=42,
                                                fg_color=COLORS["panel_hover"], button_color=COLORS["accent"], button_hover_color=COLORS["accent_hover"], text_color=COLORS["text"])
         self.category_menu.pack(side="left", padx=(10, 0))
-        self.status_menu = ctk.CTkOptionMenu(controls, variable=self.status_filter, values=[tr(value) for value in ("Sve usluge", "Istječe uskoro", "Isteklo", "Automatska obnova")], command=lambda _value: self.render_cards(), width=160, height=42,
+        self.status_menu = ctk.CTkOptionMenu(controls, variable=self.status_filter, values=[tr(value) for value in ("Sve usluge", "Istječe uskoro", "Isteklo", "Automatska obnova")], command=self.on_status_filter_changed, width=160, height=42,
                                              fg_color=COLORS["panel_hover"], button_color=COLORS["accent"], button_hover_color=COLORS["accent_hover"], text_color=COLORS["text"])
         self.status_menu.pack(side="left", padx=(8, 0))
         ctk.CTkButton(controls, text="Sve", width=58, height=42, fg_color=COLORS["panel_hover"], hover_color=COLORS["border"], command=self.clear_filters).pack(side="left", padx=(8, 0))
@@ -1594,6 +1669,18 @@ class DigitalVault(ctk.CTk):
         self.search.set("")
         self.category_filter.set(tr("Sve kategorije"))
         self.status_filter.set(tr("Sve usluge"))
+        self.stats_filter = "all"
+        self.render_cards()
+
+    def on_status_filter_changed(self, _value=None) -> None:
+        self.stats_filter = "all"
+        self.render_cards()
+
+    def filter_from_stat(self, selection: str) -> None:
+        self.search.set("")
+        self.category_filter.set(tr("Sve kategorije"))
+        self.stats_filter = selection
+        self.status_filter.set(tr({"all": "Sve usluge", "monthly": "Sve usluge", "expiring": "Istječe uskoro", "expired": "Isteklo"}[selection]))
         self.render_cards()
 
     def update_filter_options(self) -> None:
@@ -1680,11 +1767,15 @@ class DigitalVault(ctk.CTk):
                 currency = record.get("currency", "EUR")
                 monthly_totals[currency] = monthly_totals.get(currency, 0) + amount
         monthly_text = " · ".join(format_money(amount, currency) for currency, amount in monthly_totals.items()) or "—"
-        for title, number, tone in [("UKUPNO USLUGA", str(len(self.records)), COLORS["accent"]), ("MJ. TROŠAK", monthly_text, COLORS["success"]), ("ISTJEČE U 30 DANA", str(expiring), COLORS["warning"]), ("ISTEKLO", str(expired), COLORS["danger"])]:
-            card = ctk.CTkFrame(self.stats, fg_color=COLORS["panel"], corner_radius=13)
+        for title, number, tone, selection in [("UKUPNO USLUGA", str(len(self.records)), COLORS["accent"], "all"), ("MJ. TROŠAK", monthly_text, COLORS["success"], "monthly"), ("ISTJEČE U 30 DANA", str(expiring), COLORS["warning"], "expiring"), ("ISTEKLO", str(expired), COLORS["danger"], "expired")]:
+            card = ctk.CTkFrame(self.stats, fg_color=COLORS["panel"], corner_radius=13, border_width=1 if self.stats_filter == selection else 0, border_color=tone if self.stats_filter == selection else COLORS["panel"])
             card.pack(side="left", expand=True, fill="x", padx=(0, 10))
-            ctk.CTkLabel(card, text=title, font=("Arial", 10, "bold"), text_color=COLORS["muted"]).pack(anchor="w", padx=15, pady=(13, 0))
-            ctk.CTkLabel(card, text=number, font=("Arial", 18 if title == "MJ. TROŠAK" else 24, "bold"), text_color=tone).pack(anchor="w", padx=15, pady=(0, 13))
+            title_label = ctk.CTkLabel(card, text=title, font=("Arial", 10, "bold"), text_color=COLORS["muted"])
+            title_label.pack(anchor="w", padx=15, pady=(13, 0))
+            number_label = ctk.CTkLabel(card, text=number, font=("Arial", 18 if title == "MJ. TROŠAK" else 24, "bold"), text_color=tone)
+            number_label.pack(anchor="w", padx=15, pady=(0, 13))
+            for widget in (card, title_label, number_label):
+                widget.bind("<Button-1>", lambda _event, value=selection: self.filter_from_stat(value), add="+")
 
     def status(self, record: dict):
         renewal = parse_date(record.get("renewal_date", "")) if record.get("auto_renew") == "Da" else None
@@ -1694,7 +1785,7 @@ class DigitalVault(ctk.CTk):
         if days < 0: return tr("Isteklo prije {days} d.").format(days=abs(days)), COLORS["danger"]
         action = tr("Naplata") if renewal else tr("Istječe")
         if days == 0: return tr("{action} danas").format(action=action), COLORS["danger"]
-        if days <= 30: return tr("{action} za {days} d.").format(action=action, days=days), COLORS["warning"]
+        if days <= 30: return tr("{action} za {days} d. · {date}").format(action=action, days=days, date=date_text(date_value(expiry))), COLORS["warning"]
         return tr("{action}: {date}").format(action=action, date=date_text(date_value(expiry))), COLORS["success"]
 
     def render_cards(self):
@@ -1703,7 +1794,7 @@ class DigitalVault(ctk.CTk):
         today, near = date.today(), date.today() + timedelta(days=30)
         filtered = []
         for record in self.records:
-            searchable = " ".join(str(record.get(key, "")) for key in ("name", "category", "seller", "login"))
+            searchable = " ".join(str(record.get(key, "")) for key in ("name", "category", "seller", "login", "iptv_url"))
             expiry = parse_date(record.get("expiry_date", ""))
             status = self.status_filter.get()
             matches_status = (
@@ -1751,11 +1842,14 @@ class DigitalVault(ctk.CTk):
             eye.pack(side="left", padx=7)
         action = ctk.CTkFrame(card, fg_color="transparent")
         action.pack(fill="x", padx=14, pady=(9, 12))
-        for label, url in [("↗ Kupnja", record.get("purchase_url", "")), ("◌ Chat", record.get("chat_url", ""))]:
+        for label, url in [("↗ IPTV", record.get("iptv_url", "")), ("↗ Kupnja", record.get("purchase_url", "")), ("◌ Chat", record.get("chat_url", ""))]:
             if url:
                 ctk.CTkButton(action, text=label, command=lambda link=url: webbrowser.open(link), height=29, width=84, corner_radius=7, fg_color=COLORS["panel_hover"], hover_color=COLORS["border"], text_color=COLORS["text"], font=("Arial", 11)).pack(side="left", padx=3)
         if record.get("login"):
             ctk.CTkButton(action, text="⧉ E-mail", command=lambda value=record["login"]: self.copy_to_clipboard(value, "Korisničko ime"), height=29, width=78, corner_radius=7,
+                          fg_color=COLORS["panel_hover"], hover_color=COLORS["border"], text_color=COLORS["text"], font=("Arial", 11)).pack(side="left", padx=3)
+        if record.get("iptv_url"):
+            ctk.CTkButton(action, text="⧉ IPTV URL", command=lambda value=record["iptv_url"]: self.copy_to_clipboard(value, "IPTV URL"), height=29, width=94, corner_radius=7,
                           fg_color=COLORS["panel_hover"], hover_color=COLORS["border"], text_color=COLORS["text"], font=("Arial", 11)).pack(side="left", padx=3)
         if record.get("password"):
             ctk.CTkButton(action, text="⧉ Lozinka", command=lambda item=record: self.copy_to_clipboard(self.vault.decrypt(item["password"]), "Lozinka"), height=29, width=80, corner_radius=7,
