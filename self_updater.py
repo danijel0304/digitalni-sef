@@ -1,14 +1,14 @@
-"""Provjera, preuzimanje i sigurna instalacija izdanja s GitHuba."""
+"""Provjera, preuzimanje i instalacija novih izdanja s GitHuba."""
 from __future__ import annotations
 
 import hashlib
 import json
 import os
 import re
-import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 import threading
 import urllib.error
@@ -20,7 +20,7 @@ from tkinter import messagebox, ttk
 
 
 class SelfUpdater:
-    """Preuzima samo službeni paket najnovijeg GitHub Releasea."""
+    """Updater za source, Windows EXE i Linux EXE/AppImage/DEB/RPM/TAR instalacije."""
 
     CHUNK_SIZE = 256 * 1024
 
@@ -31,6 +31,7 @@ class SelfUpdater:
         self.button_getter = button_getter
         self.language_getter = language_getter
         self.running = False
+        self.latest = ""
         self.progress_window: tk.Toplevel | None = None
         self.progress_bar: ttk.Progressbar | None = None
         self.progress_label: tk.Label | None = None
@@ -48,14 +49,14 @@ class SelfUpdater:
 
     def _check_worker(self, manual: bool) -> None:
         try:
-            request = urllib.request.Request(
+            req = urllib.request.Request(
                 f"https://api.github.com/repos/{self.repo}/releases/latest",
                 headers={"Accept": "application/vnd.github+json", "User-Agent": f"Digitalni-sef/{self.version}"},
             )
-            with urllib.request.urlopen(request, timeout=15) as response:
+            with urllib.request.urlopen(req, timeout=15) as response:
                 release = json.loads(response.read().decode("utf-8"))
             if release.get("draft") or release.get("prerelease"):
-                raise ValueError("Nema dostupnog stabilnog izdanja.")
+                raise ValueError(self._text("Nema dostupnog stabilnog izdanja."))
             self.root.after(0, lambda: self._checked(release, manual))
         except (OSError, TimeoutError, ValueError, json.JSONDecodeError, urllib.error.URLError) as error:
             self.root.after(0, lambda: self._failed(str(error), manual))
@@ -64,30 +65,48 @@ class SelfUpdater:
         self.running = False
         self._set_button(True)
         latest = str(release.get("tag_name", "")).strip()
-        release_url = str(release.get("html_url") or f"https://github.com/{self.repo}/releases/latest")
         if not latest:
             self._failed(self._text("GitHub nije vratio verziju izdanja."), manual)
             return
         if not self._is_newer(latest, self.version):
             if manual:
-                messagebox.showinfo(self._text("Ažuriranje"), self._text("Koristite najnoviju verziju ({version}).").format(version=self.version), parent=self.root)
+                messagebox.showinfo(
+                    self._text("Ažuriranje"),
+                    self._text("Koristite najnoviju verziju ({version}).").format(version=self.version),
+                    parent=self.root,
+                )
             return
-        prompt = self._text("Dostupna je verzija {latest} (trenutno {current}).\n\nŽelite li je preuzeti i instalirati?").format(latest=latest, current=self.version)
+
+        prompt = self._text(
+            "Dostupna je verzija {latest} (trenutno {current}).\n\nŽelite li je preuzeti i instalirati?"
+        ).format(latest=latest, current=self.version)
         if not messagebox.askyesno(self._text("Dostupno ažuriranje"), prompt, parent=self.root):
             return
-        asset = self._matching_asset(release.get("assets", []))
-        if not getattr(sys, "frozen", False) or asset is None:
-            messagebox.showinfo(
+
+        self.latest = latest
+        mode = self._install_mode()
+        asset = None if mode == "source" else self._matching_asset(release.get("assets", []), mode)
+        if mode != "source" and asset is None:
+            messagebox.showwarning(
                 self._text("Ažuriranje"),
-                self._text("Automatska instalacija dostupna je za Windows EXE i Linux AppImage. Otvorena je stranica izdanja za ručno preuzimanje."),
+                self._text("Za ovu instalaciju nije pronađen odgovarajući paket. Otvara se stranica izdanja."),
                 parent=self.root,
             )
-            webbrowser.open(release_url, new=2)
+            webbrowser.open(str(release.get("html_url") or f"https://github.com/{self.repo}/releases/latest"), new=2)
             return
+
+        if mode == "source":
+            asset = {
+                "name": f"digitalni-sef-{latest}-source.tar.gz",
+                "browser_download_url": str(release.get("tarball_url") or f"https://api.github.com/repos/{self.repo}/tarball/{latest}"),
+                "size": 0,
+                "digest": "",
+            }
+
         self.running = True
         self._set_button(False)
         self._show_progress(latest)
-        threading.Thread(target=self._download_worker, args=(asset,), daemon=True).start()
+        threading.Thread(target=self._download_worker, args=(asset, mode), daemon=True).start()
 
     def _show_progress(self, latest: str) -> None:
         self._close_progress()
@@ -100,14 +119,17 @@ class SelfUpdater:
 
         frame = tk.Frame(window, padx=24, pady=20)
         frame.pack(fill="both", expand=True)
-        title = tk.Label(frame, text=self._text("Ažuriranje na {version}").format(version=latest), font=("TkDefaultFont", 12, "bold"))
-        title.pack(anchor="w")
+        tk.Label(
+            frame,
+            text=self._text("Ažuriranje na {version}").format(version=latest),
+            font=("TkDefaultFont", 12, "bold"),
+        ).pack(anchor="w")
         self.progress_label = tk.Label(frame, text=self._text("Preuzimanje ažuriranja..."))
         self.progress_label.pack(anchor="w", pady=(12, 6))
 
         row = tk.Frame(frame)
         row.pack(fill="x")
-        self.progress_bar = ttk.Progressbar(row, orient="horizontal", mode="determinate", maximum=100, length=330)
+        self.progress_bar = ttk.Progressbar(row, orient="horizontal", mode="determinate", maximum=100, length=340)
         self.progress_bar.pack(side="left", fill="x", expand=True)
         self.progress_percent = tk.Label(row, text="0%", width=5, anchor="e")
         self.progress_percent.pack(side="left", padx=(10, 0))
@@ -123,7 +145,7 @@ class SelfUpdater:
             pass
         window.grab_set()
 
-    def _download_worker(self, asset: dict) -> None:
+    def _download_worker(self, asset: dict, mode: str) -> None:
         staging: Path | None = None
         try:
             url = str(asset["browser_download_url"])
@@ -135,7 +157,7 @@ class SelfUpdater:
             downloaded = 0
             expected = int(asset.get("size") or 0)
 
-            with urllib.request.urlopen(request, timeout=90) as response, package.open("wb") as output:
+            with urllib.request.urlopen(request, timeout=120) as response, package.open("wb") as output:
                 header_total = response.headers.get("Content-Length")
                 if header_total and str(header_total).isdigit():
                     expected = int(header_total)
@@ -159,7 +181,7 @@ class SelfUpdater:
                 if expected_digest and sha256.hexdigest().lower() != expected_digest:
                     raise ValueError(self._text("Sigurnosna provjera preuzete datoteke nije uspjela."))
 
-            self.root.after(0, lambda: self._begin_install(package, staging))
+            self.root.after(0, lambda: self._begin_install(package, staging, mode))
         except (OSError, KeyError, ValueError, urllib.error.URLError) as error:
             if staging:
                 shutil.rmtree(staging, ignore_errors=True)
@@ -171,6 +193,7 @@ class SelfUpdater:
         if total > 0:
             percent = min(100, int(downloaded * 100 / total))
             if self.progress_bar:
+                self.progress_bar.stop()
                 self.progress_bar.configure(mode="determinate", value=percent)
             if self.progress_percent:
                 self.progress_percent.configure(text=f"{percent}%")
@@ -178,64 +201,90 @@ class SelfUpdater:
         else:
             if self.progress_bar:
                 self.progress_bar.configure(mode="indeterminate")
-                self.progress_bar.start(10)
+                self.progress_bar.start(12)
             if self.progress_percent:
                 self.progress_percent.configure(text="")
             detail = self._mb(downloaded)
         if self.progress_detail:
             self.progress_detail.configure(text=detail)
 
-    def _begin_install(self, package: Path, staging: Path) -> None:
+    def _begin_install(self, package: Path, staging: Path, mode: str) -> None:
         if self.progress_bar:
-            try:
-                self.progress_bar.stop()
-            except tk.TclError:
-                pass
+            self.progress_bar.stop()
             self.progress_bar.configure(mode="determinate", value=100)
         if self.progress_percent:
             self.progress_percent.configure(text="100%")
         if self.progress_label:
             self.progress_label.configure(text=self._text("Instaliranje ažuriranja..."))
         if self.progress_detail:
-            self.progress_detail.configure(text=self._text("Provjera je završena. Priprema instalacije."))
-        threading.Thread(target=self._install_worker, args=(package, staging), daemon=True).start()
+            self.progress_detail.configure(text=self._text("Preuzimanje i provjera su završeni."))
+        threading.Thread(target=self._install_worker, args=(package, staging, mode), daemon=True).start()
 
-    def _install_worker(self, package: Path, staging: Path) -> None:
+    def _install_worker(self, package: Path, staging: Path, mode: str) -> None:
         try:
-            if sys.platform.startswith("win"):
+            if mode == "source":
+                self._install_source(package, staging)
+                self.root.after(0, self._restart_ready)
+                return
+            if mode == "windows-exe":
                 self._start_windows_replace(package, staging)
                 self.root.after(0, self._restart_ready)
                 return
-            if sys.platform.startswith("linux") and os.environ.get("APPIMAGE"):
-                self._replace_linux_appimage(package, staging)
+            if mode == "appimage":
+                self._start_appimage_replace(package, staging)
+                self.root.after(0, self._restart_ready)
+                return
+            if mode in ("deb", "rpm"):
+                self._start_system_package_install(package, staging, mode)
+                self.root.after(0, self._restart_ready)
+                return
+            if mode == "tar":
+                self._start_tar_replace(package, staging)
                 self.root.after(0, self._restart_ready)
                 return
             raise OSError(self._text("Automatska instalacija nije podržana za ovaj paket."))
-        except OSError as error:
+        except (OSError, tarfile.TarError) as error:
             shutil.rmtree(staging, ignore_errors=True)
             self.root.after(0, lambda: self._install_failed(str(error)))
 
-    def _replace_linux_appimage(self, package: Path, staging: Path) -> None:
-        executable = Path(os.environ["APPIMAGE"]).expanduser().resolve()
-        parent = executable.parent
-        if not executable.exists():
-            raise OSError(self._text("Trenutni AppImage nije pronađen."))
-        if not os.access(parent, os.W_OK) or not os.access(executable, os.W_OK):
-            raise OSError(self._text("Nema dozvole za zamjenu trenutnog AppImagea. Premjestite ga u mapu u koju imate pravo pisanja."))
+    def _install_source(self, package: Path, staging: Path) -> None:
+        project = Path(__file__).resolve().parent
+        extracted = staging / "source"
+        extracted.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(package, "r:gz") as archive:
+            self._safe_extract(archive, extracted)
+        roots = [p for p in extracted.iterdir() if p.is_dir()]
+        source = roots[0] if len(roots) == 1 else extracted
 
-        replacement = parent / f".{executable.name}.update"
-        shutil.copy2(package, replacement)
-        os.chmod(replacement, 0o755)
-        if replacement.stat().st_size != package.stat().st_size:
-            replacement.unlink(missing_ok=True)
-            raise OSError(self._text("Provjera instalacijske datoteke nije uspjela."))
-        os.replace(replacement, executable)
-        subprocess.Popen([str(executable)], cwd=str(parent), start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        skip = {".git", "__pycache__", ".venv", "venv", ".idea"}
+        for item in source.iterdir():
+            if item.name in skip:
+                continue
+            target = project / item.name
+            if item.is_dir():
+                shutil.copytree(item, target, dirs_exist_ok=True)
+            else:
+                shutil.copy2(item, target)
+
+        launcher = project / "pokreni.sh"
+        if launcher.exists():
+            os.chmod(launcher, launcher.stat().st_mode | 0o111)
+        version_file = project / "digitalni_sef_version.txt"
+        version_file.write_text(self.latest + "\n", encoding="utf-8")
         shutil.rmtree(staging, ignore_errors=True)
 
+        if sys.platform.startswith("win"):
+            launcher_bat = project / "pokreni.bat"
+            if launcher_bat.exists():
+                subprocess.Popen(["cmd", "/c", str(launcher_bat)], cwd=str(project), start_new_session=True)
+            else:
+                subprocess.Popen([sys.executable, str(project / "app.py")], cwd=str(project), start_new_session=True)
+        else:
+            subprocess.Popen(["bash", str(launcher)], cwd=str(project), start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
     def _start_windows_replace(self, package: Path, staging: Path) -> None:
-        script = staging / "install-update.bat"
         executable = Path(sys.executable).resolve()
+        script = staging / "install-update.bat"
         script.write_text(
             "\r\n".join([
                 "@echo off",
@@ -246,9 +295,88 @@ class SelfUpdater:
                 f'start "" "{executable}"',
                 f'rmdir /S /Q "{staging}"',
                 'del "%~f0"',
-            ]), encoding="utf-8",
+            ]),
+            encoding="utf-8",
         )
         subprocess.Popen(["cmd", "/c", str(script)], close_fds=True, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+
+    def _start_appimage_replace(self, package: Path, staging: Path) -> None:
+        executable = Path(os.environ["APPIMAGE"]).expanduser().resolve()
+        if not executable.exists():
+            raise OSError(self._text("Trenutni AppImage nije pronađen."))
+        if not os.access(executable.parent, os.W_OK):
+            raise OSError(self._text("Nema dozvole za zamjenu trenutnog AppImagea."))
+
+        script = staging / "install-update.sh"
+        script.write_text(
+            "\n".join([
+                "#!/bin/sh",
+                "sleep 2",
+                f'cp -f "{package}" "{executable}" || exit 1',
+                f'chmod +x "{executable}"',
+                f'"{executable}" >/dev/null 2>&1 &',
+                f'rm -rf "{staging}"',
+            ]),
+            encoding="utf-8",
+        )
+        os.chmod(script, 0o700)
+        subprocess.Popen(["sh", str(script)], start_new_session=True)
+
+    def _start_system_package_install(self, package: Path, staging: Path, mode: str) -> None:
+        if shutil.which("pkexec") is None:
+            raise OSError(self._text("Za automatsku instalaciju DEB/RPM paketa potreban je pkexec."))
+        executable = Path(sys.executable).resolve()
+        command = ["dpkg", "-i", str(package)] if mode == "deb" else ["rpm", "-U", "--replacepkgs", str(package)]
+        script = staging / "install-system-package.sh"
+        quoted = " ".join(self._shell_quote(part) for part in command)
+        script.write_text(
+            "\n".join([
+                "#!/bin/sh",
+                "sleep 2",
+                f'pkexec {quoted} || exit 1',
+                f'"{executable}" >/dev/null 2>&1 &',
+                f'rm -rf "{staging}"',
+            ]),
+            encoding="utf-8",
+        )
+        os.chmod(script, 0o700)
+        subprocess.Popen(["sh", str(script)], start_new_session=True)
+
+    def _start_tar_replace(self, package: Path, staging: Path) -> None:
+        executable = Path(sys.executable).resolve()
+        current_dir = executable.parent
+        if current_dir.name != "Digitalni-sef":
+            raise OSError(self._text("Nije prepoznata TAR instalacija Digitalnog sefa."))
+
+        extracted = staging / "tar"
+        extracted.mkdir(parents=True, exist_ok=True)
+        with tarfile.open(package, "r:gz") as archive:
+            self._safe_extract(archive, extracted)
+        new_dir = extracted / "Digitalni-sef"
+        new_exe = new_dir / executable.name
+        if not new_exe.exists():
+            raise OSError(self._text("Novi TAR paket nema očekivanu izvršnu datoteku."))
+
+        parent = current_dir.parent
+        if not os.access(parent, os.W_OK):
+            raise OSError(self._text("Nema dozvole za zamjenu TAR instalacije."))
+
+        script = staging / "install-tar-update.sh"
+        script.write_text(
+            "\n".join([
+                "#!/bin/sh",
+                "sleep 2",
+                f'rm -rf "{current_dir}.old"',
+                f'mv "{current_dir}" "{current_dir}.old" || exit 1',
+                f'mv "{new_dir}" "{current_dir}" || {{ mv "{current_dir}.old" "{current_dir}"; exit 1; }}',
+                f'rm -rf "{current_dir}.old"',
+                f'"{current_dir / executable.name}" >/dev/null 2>&1 &',
+                f'rm -rf "{staging}"',
+            ]),
+            encoding="utf-8",
+        )
+        os.chmod(script, 0o700)
+        subprocess.Popen(["sh", str(script)], start_new_session=True)
 
     def _restart_ready(self) -> None:
         self.running = False
@@ -260,19 +388,60 @@ class SelfUpdater:
             self.progress_percent.configure(text="100%")
         if self.progress_bar:
             self.progress_bar.configure(value=100)
-        self.root.after(900, self.root.destroy)
+        self.root.after(1000, self.root.destroy)
 
-    def _matching_asset(self, assets: object) -> dict | None:
+    def _install_mode(self) -> str:
+        if not getattr(sys, "frozen", False):
+            return "source"
+        if sys.platform.startswith("win"):
+            return "windows-exe"
+        if sys.platform.startswith("linux"):
+            if os.environ.get("APPIMAGE"):
+                return "appimage"
+            executable = Path(sys.executable).resolve()
+            if str(executable).startswith("/usr/lib/digitalni-sef/"):
+                return self._linux_package_family()
+            if executable.parent.name == "Digitalni-sef":
+                return "tar"
+            return self._linux_package_family()
+        return "unsupported"
+
+    def _linux_package_family(self) -> str:
+        data = {}
+        try:
+            for line in Path("/etc/os-release").read_text(encoding="utf-8").splitlines():
+                if "=" in line:
+                    key, value = line.split("=", 1)
+                    data[key] = value.strip().strip('"').lower()
+        except OSError:
+            pass
+        family = " ".join([data.get("ID", ""), data.get("ID_LIKE", "")])
+        if any(token in family for token in ("fedora", "rhel", "centos", "suse", "opensuse")):
+            return "rpm"
+        if any(token in family for token in ("debian", "ubuntu", "mint", "pop")):
+            return "deb"
+        return "tar"
+
+    def _matching_asset(self, assets: object, mode: str) -> dict | None:
         if not isinstance(assets, list):
             return None
-        suffix = ".exe" if sys.platform.startswith("win") else ".AppImage" if sys.platform.startswith("linux") and os.environ.get("APPIMAGE") else ""
-        if not suffix:
-            return None
-        candidates = [asset for asset in assets if isinstance(asset, dict) and str(asset.get("name", "")).endswith(suffix)]
+        suffixes = {
+            "windows-exe": (".exe",),
+            "appimage": (".AppImage",),
+            "deb": (".deb",),
+            "rpm": (".rpm",),
+            "tar": (".tar.gz",),
+        }.get(mode, ())
+        candidates = [
+            asset for asset in assets
+            if isinstance(asset, dict) and any(str(asset.get("name", "")).endswith(suffix) for suffix in suffixes)
+        ]
         if not candidates:
             return None
-        # Prefer x86_64/amd64 builds when several packages of the same type exist.
-        return next((asset for asset in candidates if any(token in str(asset.get("name", "")).lower() for token in ("x86_64", "amd64"))), candidates[0])
+        return next(
+            (a for a in candidates if any(t in str(a.get("name", "")).lower() for t in ("x86_64", "amd64"))),
+            candidates[0],
+        )
 
     def _failed(self, error: str, manual: bool) -> None:
         self.running = False
@@ -315,9 +484,12 @@ class SelfUpdater:
             button.configure(state="normal" if enabled else "disabled")
 
     def _text(self, croatian: str) -> str:
-        return croatian if self.language_getter() != "en" else {
+        if self.language_getter() != "en":
+            return croatian
+        return {
             "Ažuriranje": "Update",
             "Provjera ažuriranja već je u tijeku.": "An update check is already running.",
+            "Nema dostupnog stabilnog izdanja.": "No stable release is available.",
             "GitHub nije vratio verziju izdanja.": "GitHub did not return a release version.",
             "Koristite najnoviju verziju ({version}).": "You are using the latest version ({version}).",
             "Dostupna je verzija {latest} (trenutno {current}).\n\nŽelite li je preuzeti i instalirati?": "Version {latest} is available (current: {current}).\n\nDo you want to download and install it?",
@@ -325,25 +497,41 @@ class SelfUpdater:
             "Ažuriranje na {version}": "Updating to {version}",
             "Preuzimanje ažuriranja...": "Downloading update...",
             "Instaliranje ažuriranja...": "Installing update...",
-            "Provjera je završena. Priprema instalacije.": "Verification complete. Preparing installation.",
+            "Preuzimanje i provjera su završeni.": "Download and verification complete.",
             "Ažuriranje je instalirano.": "Update installed.",
             "Ponovno pokretanje Digitalnog sefa...": "Restarting Digital Vault...",
-            "Automatska instalacija dostupna je za Windows EXE i Linux AppImage. Otvorena je stranica izdanja za ručno preuzimanje.": "Automatic installation is available for Windows EXE and Linux AppImage. The release page has been opened for manual download.",
-            "Preuzeta datoteka je prazna.": "The downloaded file is empty.",
-            "Preuzimanje nije potpuno.": "The download is incomplete.",
-            "Sigurnosna provjera preuzete datoteke nije uspjela.": "The downloaded file failed its security verification.",
-            "Automatska instalacija nije podržana za ovaj paket.": "Automatic installation is not supported for this package.",
-            "Trenutni AppImage nije pronađen.": "The current AppImage could not be found.",
-            "Nema dozvole za zamjenu trenutnog AppImagea. Premjestite ga u mapu u koju imate pravo pisanja.": "The current AppImage cannot be replaced because the folder is not writable. Move it to a folder you can write to.",
-            "Provjera instalacijske datoteke nije uspjela.": "The installation file verification failed.",
-            "Ažuriranje nije uspjelo": "Update failed",
             "Provjera ažuriranja nije uspjela": "Update check failed",
             "Preuzimanje ažuriranja nije uspjelo": "Update download failed",
+            "Ažuriranje nije uspjelo": "Update failed",
+            "Preuzeta datoteka je prazna.": "The downloaded file is empty.",
+            "Preuzimanje nije potpuno.": "The download is incomplete.",
+            "Sigurnosna provjera preuzete datoteke nije uspjela.": "Downloaded file verification failed.",
+            "Za ovu instalaciju nije pronađen odgovarajući paket. Otvara se stranica izdanja.": "No matching package was found for this installation. Opening the release page.",
+            "Automatska instalacija nije podržana za ovaj paket.": "Automatic installation is not supported for this package.",
+            "Trenutni AppImage nije pronađen.": "The current AppImage was not found.",
+            "Nema dozvole za zamjenu trenutnog AppImagea.": "No permission to replace the current AppImage.",
+            "Za automatsku instalaciju DEB/RPM paketa potreban je pkexec.": "pkexec is required for automatic DEB/RPM installation.",
+            "Nije prepoznata TAR instalacija Digitalnog sefa.": "Digital Vault TAR installation was not recognized.",
+            "Novi TAR paket nema očekivanu izvršnu datoteku.": "The new TAR package does not contain the expected executable.",
+            "Nema dozvole za zamjenu TAR instalacije.": "No permission to replace the TAR installation.",
         }.get(croatian, croatian)
+
+    @staticmethod
+    def _safe_extract(archive: tarfile.TarFile, destination: Path) -> None:
+        destination = destination.resolve()
+        for member in archive.getmembers():
+            target = (destination / member.name).resolve()
+            if destination != target and destination not in target.parents:
+                raise tarfile.TarError("Unsafe path in update archive.")
+        archive.extractall(destination)
 
     @staticmethod
     def _safe_name(name: str) -> str:
         return re.sub(r"[^A-Za-z0-9._-]+", "-", name) or "update.bin"
+
+    @staticmethod
+    def _shell_quote(value: str) -> str:
+        return "'" + value.replace("'", "'\"'\"'") + "'"
 
     @staticmethod
     def _mb(value: int) -> str:
@@ -354,4 +542,5 @@ class SelfUpdater:
         def parts(value: str) -> tuple[int, ...]:
             return tuple(int(part) for part in re.findall(r"\d+", value)) or (0,)
         left, right = parts(latest), parts(current)
-        return left + (0,) * max(0, len(right) - len(left)) > right + (0,) * max(0, len(left) - len(right))
+        width = max(len(left), len(right))
+        return left + (0,) * (width - len(left)) > right + (0,) * (width - len(right))
