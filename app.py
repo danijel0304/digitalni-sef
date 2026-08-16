@@ -158,6 +158,13 @@ ENGLISH.update({
     "MJESEČNO": "MONTHLY", "GODIŠNJE": "YEARLY", "JEDNOKRATNE KUPOVINE": "ONE-TIME PURCHASES",
     "Potrošnja po kategoriji": "Spending by category", "Nema unesenih cijena za prikaz.": "There are no saved prices to display.",
     "Najviše kategorija": "Top categories", "Aktivne pretplate": "Active subscriptions",
+    "Status računa": "Account status", "Radi": "Working", "Ne radi": "Not working", "Nije provjeren": "Not checked",
+    "Ticket": "Ticket", "Nije otvoren": "Not opened", "Otvoren": "Open", "Zatvoren": "Closed",
+    "Ticket otvoren gdje": "Ticket opened at", "Ticket otvoren kada": "Ticket opened on", "Faza ticketa": "Ticket stage",
+    "Čeka odgovor": "Waiting for reply", "U obradi": "In progress", "Riješeno": "Resolved", "Odbijeno": "Rejected",
+    "Uredi status": "Edit status", "Praćenje računa i ticketa": "Account & ticket tracking",
+    "Spremi status": "Save status", "Npr. G2G, AccountBot, e-mail...": "e.g. G2G, AccountBot, email...",
+    "Kratka napomena": "Short note", "Napomena o statusu / ticketu...": "Status / ticket note...",
 })
 
 
@@ -646,6 +653,8 @@ class SubscriptionOptionsDialog(ctk.CTkToplevel):
         row = ctk.CTkFrame(card, fg_color="transparent")
         row.pack(fill="x", padx=24, pady=3)
         self.price = self.add_entry(row, "Cijena po naplati", "npr. 9,99", values.get("price", ""), "left")
+        # Primarna radnja je ispred svih opcijskih kontrola. Ako se neka od
+        # dodatnih kontrola ne može izraditi, cijena se svejedno može spremiti.
         ctk.CTkButton(card, text="Dodaj cijenu", command=lambda: self.apply(save_record=True), height=40, corner_radius=9,
                       fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], font=("Arial", 12, "bold")).pack(fill="x", padx=24, pady=(8, 10))
         auto_renew_row = ctk.CTkFrame(card, fg_color="transparent")
@@ -720,13 +729,17 @@ class SubscriptionOptionsDialog(ctk.CTkToplevel):
             messagebox.showwarning("Neispravan datum", "Odaberite datum sljedeće naplate u kalendaru.", parent=self)
             return False
         self.dialog.subscription_values = {
-            "price": price, "currency": self.currency.get() if hasattr(self, "currency") else previous.get("currency", "EUR"),
+            "price": price,
+            "currency": self.currency.get() if hasattr(self, "currency") else previous.get("currency", "EUR"),
             "billing_cycle": original_text(self.cycle.get()) if hasattr(self, "cycle") else previous.get("billing_cycle", "Mjesečno"),
-            "auto_renew": original_text(self.auto_renew.get()), "renewal_date": renewal,
+            "auto_renew": original_text(self.auto_renew.get()) if hasattr(self, "auto_renew") else previous.get("auto_renew", "Ne"),
+            "renewal_date": renewal,
             "reminder_days": original_text(self.reminder_days.get()) if hasattr(self, "reminder_days") else previous.get("reminder_days", "7"),
         }
         self.dialog.update_subscription_button()
         self.destroy()
+        # Vrijednosti su postavljene prije spremanja, pa klik na "Dodaj cijenu"
+        # odmah upisuje cijenu u zapis i osvježava prikaz usluge.
         if save_record:
             self.dialog.save()
         return True
@@ -752,6 +765,8 @@ class RecordDialog(ctk.CTkToplevel):
         self.attachments = list(record.get("attachments", [])) if record else []
         self.pending_attachments: list[str] = []
 
+        # Obrazac ostaje cijeli dostupan i na manjim ekranima. CTkScrollableFrame
+        # automatski prima kotačić miša samo dok je pokazivač iznad ovog obrasca.
         outer = ctk.CTkScrollableFrame(self, width=670, height=680, fg_color=COLORS["bg"], corner_radius=0,
                                        scrollbar_button_color=COLORS["border"], scrollbar_button_hover_color=COLORS["accent"])
         outer.pack(expand=True, fill="both", padx=20, pady=16)
@@ -866,6 +881,7 @@ class RecordDialog(ctk.CTkToplevel):
         self.show_hint(f"Odabrano: {name} · {category}")
 
     def update_iptv_url_field(self, _event=None) -> None:
+        """Show a playlist/server URL field only for IPTV services."""
         is_iptv = "iptv" in self.fields["category"].get().casefold()
         shown = self.iptv_url_frame.winfo_manager() == "pack"
         if is_iptv and not shown:
@@ -1009,6 +1025,13 @@ class RecordDialog(ctk.CTkToplevel):
         values["notes"] = self.notes.get("1.0", "end-1c").strip()
         values["id"] = self.record["id"] if self.record else secrets.token_hex(8)
         values.update(self.subscription_values)
+        if self.record:
+            for key, default in (("account_status", "Nije provjeren"), ("ticket_status", "Nije otvoren"),
+                                 ("ticket_where", ""), ("ticket_date", ""), ("ticket_stage", "—"), ("status_note", "")):
+                values[key] = self.record.get(key, default)
+        else:
+            values.update({"account_status": "Nije provjeren", "ticket_status": "Nije otvoren", "ticket_where": "",
+                           "ticket_date": "", "ticket_stage": "—", "status_note": ""})
         values["attachments"] = self.attachments.copy()
         try:
             values["attachments"].extend(self.app.vault.save_attachment(source, values["id"]) for source in self.pending_attachments)
@@ -1016,6 +1039,115 @@ class RecordDialog(ctk.CTkToplevel):
             messagebox.showerror("Privitak nije spremljen", str(error), parent=self)
             return
         self.app.upsert(values)
+        self.destroy()
+
+
+class QuickStatusDialog(ctk.CTkToplevel):
+    """Compact editor for account health and support-ticket tracking."""
+    ACCOUNT_OPTIONS = ("Nije provjeren", "Radi", "Ne radi")
+    TICKET_OPTIONS = ("Nije otvoren", "Otvoren", "Zatvoren")
+    STAGE_OPTIONS = ("—", "Čeka odgovor", "U obradi", "Riješeno", "Odbijeno")
+
+    def __init__(self, app: "DigitalVault", record: dict) -> None:
+        super().__init__(app)
+        self.app, self.record = app, record
+        self.title(tr("Uredi status"))
+        if app.app_icon:
+            self.iconphoto(True, app.app_icon)
+        self.geometry("510x455")
+        self.resizable(False, False)
+        self.configure(fg_color=COLORS["bg"])
+        self.transient(app)
+
+        outer = ctk.CTkFrame(self, fg_color=COLORS["bg"], corner_radius=0)
+        outer.pack(expand=True, fill="both", padx=22, pady=18)
+        ctk.CTkLabel(outer, text="Praćenje računa i ticketa", font=("Arial", 20, "bold"), text_color=COLORS["text"]).pack(anchor="w")
+        ctk.CTkLabel(outer, text=record.get("name", ""), font=("Arial", 11), text_color=COLORS["muted"]).pack(anchor="w", pady=(1, 12))
+
+        self.account_status = StringVar(value=tr(record.get("account_status", "Nije provjeren")))
+        self.ticket_status = StringVar(value=tr(record.get("ticket_status", "Nije otvoren")))
+        self.ticket_stage = StringVar(value=tr(record.get("ticket_stage", "—")))
+
+        row = ctk.CTkFrame(outer, fg_color="transparent")
+        row.pack(fill="x", pady=4)
+        self._option(row, "Status računa", self.account_status, self.ACCOUNT_OPTIONS, "left")
+        self._option(row, "Ticket", self.ticket_status, self.TICKET_OPTIONS, "right")
+
+        row = ctk.CTkFrame(outer, fg_color="transparent")
+        row.pack(fill="x", pady=4)
+        self.ticket_where = self._entry(row, "Ticket otvoren gdje", "Npr. G2G, AccountBot, e-mail...", record.get("ticket_where", ""), "left")
+        self.ticket_date = self._date_picker(row, "Ticket otvoren kada", record.get("ticket_date", ""), "right")
+
+        stage_frame = ctk.CTkFrame(outer, fg_color="transparent")
+        stage_frame.pack(fill="x", pady=4)
+        ctk.CTkLabel(stage_frame, text="Faza ticketa", text_color=COLORS["muted"], font=("Arial", 11, "bold")).pack(anchor="w", pady=(0, 2))
+        ctk.CTkOptionMenu(stage_frame, variable=self.ticket_stage, values=[tr(v) for v in self.STAGE_OPTIONS], height=34, corner_radius=9,
+                          fg_color=COLORS["input"], button_color=COLORS["accent"], button_hover_color=COLORS["accent_hover"],
+                          text_color=COLORS["text"]).pack(fill="x")
+
+        ctk.CTkLabel(outer, text="Kratka napomena", text_color=COLORS["muted"], font=("Arial", 11, "bold")).pack(anchor="w", pady=(7, 2))
+        self.status_note = ctk.CTkTextbox(outer, height=68, corner_radius=9, fg_color=COLORS["input"], border_width=1,
+                                          border_color=COLORS["border"], text_color=COLORS["text"])
+        self.status_note.pack(fill="x")
+        self.status_note.insert("1.0", record.get("status_note", ""))
+
+        ctk.CTkButton(outer, text="Spremi status", command=self.save, height=38, corner_radius=9,
+                      fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], font=("Arial", 12, "bold")).pack(fill="x", pady=(12, 0))
+        self.wait_visibility()
+        self.grab_set()
+
+    def _option(self, parent, label, variable, choices, side):
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(side=side, fill="x", expand=True, padx=(0, 6) if side == "left" else (6, 0))
+        ctk.CTkLabel(frame, text=label, text_color=COLORS["muted"], font=("Arial", 11, "bold")).pack(anchor="w", pady=(0, 2))
+        ctk.CTkOptionMenu(frame, variable=variable, values=[tr(v) for v in choices], height=34, corner_radius=9,
+                          fg_color=COLORS["input"], button_color=COLORS["accent"], button_hover_color=COLORS["accent_hover"],
+                          text_color=COLORS["text"]).pack(fill="x")
+
+    def _entry(self, parent, label, placeholder, value, side):
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(side=side, fill="x", expand=True, padx=(0, 6) if side == "left" else (6, 0))
+        ctk.CTkLabel(frame, text=label, text_color=COLORS["muted"], font=("Arial", 11, "bold")).pack(anchor="w", pady=(0, 2))
+        entry = ctk.CTkEntry(frame, placeholder_text=placeholder, height=34, corner_radius=9, fg_color=COLORS["input"],
+                             border_color=COLORS["border"], text_color=COLORS["text"])
+        entry.pack(fill="x")
+        if value:
+            entry.insert(0, value)
+        return entry
+
+    def _date_picker(self, parent, label, value, side):
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.pack(side=side, fill="x", expand=True, padx=(0, 6) if side == "left" else (6, 0))
+        ctk.CTkLabel(frame, text=label, text_color=COLORS["muted"], font=("Arial", 11, "bold")).pack(anchor="w", pady=(0, 2))
+        field = ctk.CTkButton(frame, text="Odaberi datum", anchor="w", height=34, corner_radius=9, border_width=1,
+                              fg_color=COLORS["input"], hover_color=COLORS["panel_hover"], border_color=COLORS["border"],
+                              text_color=COLORS["muted"], font=("Arial", 12))
+        field.is_date_input = True
+        field.date_value = ""
+        field.get = lambda control=field: control.date_value
+        field.configure(command=lambda target=field: CalendarPopup(self, target))
+        field.pack(fill="x")
+        parsed = parse_date(value) if value else None
+        if parsed:
+            self.set_date(field, parsed)
+        return field
+
+    @staticmethod
+    def set_date(field, value: date) -> None:
+        formatted = date_value(value)
+        field.date_value = formatted
+        field.configure(text=date_text(formatted), text_color=COLORS["text"])
+
+    def save(self):
+        ticket_date = self.ticket_date.get().strip()
+        self.record["account_status"] = original_text(self.account_status.get())
+        self.record["ticket_status"] = original_text(self.ticket_status.get())
+        self.record["ticket_where"] = self.ticket_where.get().strip()
+        self.record["ticket_date"] = ticket_date
+        self.record["ticket_stage"] = original_text(self.ticket_stage.get())
+        self.record["status_note"] = self.status_note.get("1.0", "end-1c").strip()
+        self.app.vault.save(self.app.records)
+        self.app.refresh()
         self.destroy()
 
 
@@ -1027,7 +1159,7 @@ class RecordDetailsDialog(ctk.CTkToplevel):
         self.title(record["name"])
         if app.app_icon:
             self.iconphoto(True, app.app_icon)
-        self.geometry("700x770")
+        self.geometry("700x825")
         self.resizable(False, False)
         self.configure(fg_color=COLORS["bg"])
         self.transient(app)
@@ -1052,6 +1184,16 @@ class RecordDetailsDialog(ctk.CTkToplevel):
         if record.get("renewal_date"):
             auto_renew += f" · {date_text(record['renewal_date'])}"
         self.add_pair(outer, "Trošak", price_text, "Automatska obnova", auto_renew)
+        account_status = tr(record.get("account_status", "Nije provjeren"))
+        ticket_status = tr(record.get("ticket_status", "Nije otvoren"))
+        ticket_detail = ticket_status
+        if record.get("ticket_stage") and record.get("ticket_stage") != "—":
+            ticket_detail += f" · {tr(record['ticket_stage'])}"
+        if record.get("ticket_where"):
+            ticket_detail += f" · {record['ticket_where']}"
+        if record.get("ticket_date"):
+            ticket_detail += f" · {date_text(record['ticket_date'])}"
+        self.add_pair(outer, "Status računa", account_status, "Ticket", ticket_detail)
         self.add_credentials(outer)
         self.add_links(outer)
         self.add_attachments(outer)
@@ -1341,6 +1483,9 @@ class DigitalVault(ctk.CTk):
         self.updater = SelfUpdater(self, APP_VERSION, GITHUB_REPO, lambda: self.update_button, lambda: self.language)
         self.search.trace_add("write", self.on_overview_search)
         self.catalog_search.trace_add("write", self.reset_catalog_page)
+        # Linux/X11 šalje kotačić kao Button-4/5, dok ga dio CustomTkintera
+        # sluša samo kao MouseWheel. Ove veze čine početni pregled pomičnim
+        # čim je pokazivač nad njegovim sadržajem, bez klika na traku.
         self.bind_all("<MouseWheel>", self.scroll_overview_with_mouse, add="+")
         self.bind_all("<Button-4>", self.scroll_overview_with_mouse, add="+")
         self.bind_all("<Button-5>", self.scroll_overview_with_mouse, add="+")
@@ -1402,6 +1547,7 @@ class DigitalVault(ctk.CTk):
 
     @staticmethod
     def is_widget_inside(widget, ancestor) -> bool:
+        """Whether a Tk widget belongs to a given part of the interface."""
         while widget is not None:
             if widget == ancestor:
                 return True
@@ -1409,16 +1555,23 @@ class DigitalVault(ctk.CTk):
         return False
 
     def scroll_overview_with_mouse(self, event):
-        if self.active_page != "overview" or not hasattr(self, "listing") or not hasattr(self, "content") or not self.is_widget_inside(event.widget, self.content):
+        """Scroll the service list when the mouse is anywhere over the overview."""
+        if (
+            self.active_page != "overview"
+            or not hasattr(self, "listing")
+            or not hasattr(self, "content")
+            or not self.is_widget_inside(event.widget, self.content)
+        ):
             return None
         try:
+            canvas = self.listing._parent_canvas
             if getattr(event, "num", None) == 4 or getattr(event, "delta", 0) > 0:
                 amount = -3
             elif getattr(event, "num", None) == 5 or getattr(event, "delta", 0) < 0:
                 amount = 3
             else:
                 return None
-            self.listing._parent_canvas.yview_scroll(amount, "units")
+            canvas.yview_scroll(amount, "units")
             return "break"
         except (AttributeError, TclError):
             return None
@@ -1677,10 +1830,17 @@ class DigitalVault(ctk.CTk):
         self.render_cards()
 
     def filter_from_stat(self, selection: str) -> None:
+        """Apply the matching service-list filter after a statistics-card click."""
         self.search.set("")
         self.category_filter.set(tr("Sve kategorije"))
         self.stats_filter = selection
-        self.status_filter.set(tr({"all": "Sve usluge", "monthly": "Sve usluge", "expiring": "Istječe uskoro", "expired": "Isteklo"}[selection]))
+        statuses = {
+            "all": "Sve usluge",
+            "monthly": "Sve usluge",
+            "expiring": "Istječe uskoro",
+            "expired": "Isteklo",
+        }
+        self.status_filter.set(tr(statuses[selection]))
         self.render_cards()
 
     def update_filter_options(self) -> None:
@@ -1767,8 +1927,14 @@ class DigitalVault(ctk.CTk):
                 currency = record.get("currency", "EUR")
                 monthly_totals[currency] = monthly_totals.get(currency, 0) + amount
         monthly_text = " · ".join(format_money(amount, currency) for currency, amount in monthly_totals.items()) or "—"
-        for title, number, tone, selection in [("UKUPNO USLUGA", str(len(self.records)), COLORS["accent"], "all"), ("MJ. TROŠAK", monthly_text, COLORS["success"], "monthly"), ("ISTJEČE U 30 DANA", str(expiring), COLORS["warning"], "expiring"), ("ISTEKLO", str(expired), COLORS["danger"], "expired")]:
-            card = ctk.CTkFrame(self.stats, fg_color=COLORS["panel"], corner_radius=13, border_width=1 if self.stats_filter == selection else 0, border_color=tone if self.stats_filter == selection else COLORS["panel"])
+        for title, number, tone, selection in [
+            ("UKUPNO USLUGA", str(len(self.records)), COLORS["accent"], "all"),
+            ("MJ. TROŠAK", monthly_text, COLORS["success"], "monthly"),
+            ("ISTJEČE U 30 DANA", str(expiring), COLORS["warning"], "expiring"),
+            ("ISTEKLO", str(expired), COLORS["danger"], "expired"),
+        ]:
+            card = ctk.CTkFrame(self.stats, fg_color=COLORS["panel"], corner_radius=13, border_width=1 if self.stats_filter == selection else 0,
+                                border_color=tone if self.stats_filter == selection else COLORS["panel"])
             card.pack(side="left", expand=True, fill="x", padx=(0, 10))
             title_label = ctk.CTkLabel(card, text=title, font=("Arial", 10, "bold"), text_color=COLORS["muted"])
             title_label.pack(anchor="w", padx=15, pady=(13, 0))
@@ -1832,6 +1998,27 @@ class DigitalVault(ctk.CTk):
         detail = "  •  ".join(x for x in [record.get("category", ""), record.get("login", ""), cost, seller_detail] if x) or "Nema dodatnih podataka"
         detail_label = ctk.CTkLabel(card, text=detail, font=("Arial", 12), text_color=COLORS["muted"], anchor="w")
         detail_label.pack(fill="x", padx=17)
+
+        tracker = ctk.CTkFrame(card, fg_color=COLORS["panel_hover"], corner_radius=9)
+        tracker.pack(fill="x", padx=17, pady=(7, 1))
+        account_raw = record.get("account_status", "Nije provjeren")
+        account_color = COLORS["success"] if account_raw == "Radi" else COLORS["danger"] if account_raw == "Ne radi" else COLORS["muted"]
+        ctk.CTkLabel(tracker, text=f"●  {tr('Status računa')}: {tr(account_raw)}", font=("Arial", 10, "bold"),
+                     text_color=account_color).pack(side="left", padx=(10, 8), pady=6)
+        ticket_raw = record.get("ticket_status", "Nije otvoren")
+        ticket_bits = [tr(ticket_raw)]
+        if record.get("ticket_stage") and record.get("ticket_stage") != "—":
+            ticket_bits.append(tr(record["ticket_stage"]))
+        if record.get("ticket_where"):
+            ticket_bits.append(record["ticket_where"])
+        if record.get("ticket_date"):
+            ticket_bits.append(date_text(record["ticket_date"]))
+        ticket_color = COLORS["warning"] if ticket_raw == "Otvoren" else COLORS["success"] if ticket_raw == "Zatvoren" else COLORS["muted"]
+        ctk.CTkLabel(tracker, text=f"◌  {tr('Ticket')}: {' · '.join(ticket_bits)}", font=("Arial", 10),
+                     text_color=ticket_color).pack(side="left", padx=8, pady=6)
+        ctk.CTkButton(tracker, text="✎", command=lambda r=record: QuickStatusDialog(self, r), width=31, height=25, corner_radius=7,
+                      fg_color=COLORS["badge"], hover_color=COLORS["border"], text_color=COLORS["accent"], font=("Arial", 13, "bold")).pack(side="right", padx=6, pady=4)
+
         password_row = ctk.CTkFrame(card, fg_color="transparent")
         password_row.pack(fill="x", padx=17, pady=(5, 0))
         password_value = StringVar(value="Lozinka: ••••••••" if record.get("password") else "Lozinka nije spremljena")
@@ -1856,7 +2043,7 @@ class DigitalVault(ctk.CTk):
                           fg_color=COLORS["panel_hover"], hover_color=COLORS["border"], text_color=COLORS["text"], font=("Arial", 11)).pack(side="left", padx=3)
         ctk.CTkButton(action, text="Uredi", command=lambda r=record: RecordDialog(self, r), height=29, width=60, corner_radius=7, fg_color="transparent", border_width=1, border_color=COLORS["border"], hover_color=COLORS["panel_hover"], font=("Arial", 11)).pack(side="right", padx=3)
         ctk.CTkButton(action, text="Obriši", command=lambda r=record: self.delete(r), height=29, width=64, corner_radius=7, fg_color="transparent", text_color=COLORS["danger"], hover_color="#3B1E32", font=("Arial", 11)).pack(side="right", padx=3)
-        for widget in (card, head, name_label, status_label, detail_label, password_row):
+        for widget in (card, head, name_label, status_label, detail_label, tracker, password_row):
             widget.bind("<Double-Button-1>", lambda _event, item=record: RecordDetailsDialog(self, item), add="+")
 
     def toggle_card_password(self, record: dict, value: StringVar, button: ctk.CTkButton) -> None:
