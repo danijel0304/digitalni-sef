@@ -1,0 +1,76 @@
+--- a/app.py
++++ b/app.py
+@@ -158,6 +158,13 @@
+     "MJESEČNO": "MONTHLY", "GODIŠNJE": "YEARLY", "JEDNOKRATNE KUPOVINE": "ONE-TIME PURCHASES",
+     "Potrošnja po kategoriji": "Spending by category", "Nema unesenih cijena za prikaz.": "There are no saved prices to display.",
+     "Najviše kategorija": "Top categories", "Aktivne pretplate": "Active subscriptions",
++    "Status računa": "Account status", "Radi": "Working", "Ne radi": "Not working", "Nije provjeren": "Not checked",
++    "Ticket": "Ticket", "Nije otvoren": "Not opened", "Otvoren": "Open", "Zatvoren": "Closed",
++    "Ticket otvoren gdje": "Ticket opened at", "Ticket otvoren kada": "Ticket opened on", "Faza ticketa": "Ticket stage",
++    "Čeka odgovor": "Waiting for reply", "U obradi": "In progress", "Riješeno": "Resolved", "Odbijeno": "Rejected",
++    "Uredi status": "Edit status", "Praćenje računa i ticketa": "Account & ticket tracking",
++    "Spremi status": "Save status", "Npr. G2G, AccountBot, e-mail...": "e.g. G2G, AccountBot, email...",
++    "Kratka napomena": "Short note", "Napomena o statusu / ticketu...": "Status / ticket note...",
+ })
+ 
+ 
+@@ -646,6 +653,8 @@
+         row = ctk.CTkFrame(card, fg_color="transparent")
+         row.pack(fill="x", padx=24, pady=3)
+         self.price = self.add_entry(row, "Cijena po naplati", "npr. 9,99", values.get("price", ""), "left")
++        # Primarna radnja je ispred svih opcijskih kontrola. Ako se neka od
++        # dodatnih kontrola ne može izraditi, cijena se svejedno može spremiti.
+         ctk.CTkButton(card, text="Dodaj cijenu", command=lambda: self.apply(save_record=True), height=40, corner_radius=9,
+                       fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"], font=("Arial", 12, "bold")).pack(fill="x", padx=24, pady=(8, 10))
+         auto_renew_row = ctk.CTkFrame(card, fg_color="transparent")
+@@ -720,13 +729,17 @@
+             messagebox.showwarning("Neispravan datum", "Odaberite datum sljedeće naplate u kalendaru.", parent=self)
+             return False
+         self.dialog.subscription_values = {
+-            "price": price, "currency": self.currency.get() if hasattr(self, "currency") else previous.get("currency", "EUR"),
++            "price": price,
++            "currency": self.currency.get() if hasattr(self, "currency") else previous.get("currency", "EUR"),
+             "billing_cycle": original_text(self.cycle.get()) if hasattr(self, "cycle") else previous.get("billing_cycle", "Mjesečno"),
+-            "auto_renew": original_text(self.auto_renew.get()), "renewal_date": renewal,
++            "auto_renew": original_text(self.auto_renew.get()) if hasattr(self, "auto_renew") else previous.get("auto_renew", "Ne"),
++            "renewal_date": renewal,
+             "reminder_days": original_text(self.reminder_days.get()) if hasattr(self, "reminder_days") else previous.get("reminder_days", "7"),
+         }
+         self.dialog.update_subscription_button()
+         self.destroy()
++        # Vrijednosti su postavljene prije spremanja, pa klik na "Dodaj cijenu"
++        # odmah upisuje cijenu u zapis i osvježava prikaz usluge.
+         if save_record:
+             self.dialog.save()
+         return True
+@@ -752,6 +765,8 @@
+         self.attachments = list(record.get("attachments", [])) if record else []
+         self.pending_attachments: list[str] = []
+ 
++        # Obrazac ostaje cijeli dostupan i na manjim ekranima. CTkScrollableFrame
++        # automatski prima kotačić miša samo dok je pokazivač iznad ovog obrasca.
+         outer = ctk.CTkScrollableFrame(self, width=670, height=680, fg_color=COLORS["bg"], corner_radius=0,
+                                        scrollbar_button_color=COLORS["border"], scrollbar_button_hover_color=COLORS["accent"])
+         outer.pack(expand=True, fill="both", padx=20, pady=16)
+@@ -866,6 +881,7 @@
+         self.show_hint(f"Odabrano: {name} · {category}")
+ 
+     def update_iptv_url_field(self, _event=None) -> None:
++        """Show a playlist/server URL field only for IPTV services."""
+         is_iptv = "iptv" in self.fields["category"].get().casefold()
+         shown = self.iptv_url_frame.winfo_manager() == "pack"
+         if is_iptv and not shown:
+@@ -1009,6 +1025,13 @@
+         values["notes"] = self.notes.get("1.0", "end-1c").strip()
+         values["id"] = self.record["id"] if self.record else secrets.token_hex(8)
+         values.update(self.subscription_values)
++        if self.record:
++            for key, default in (("account_status", "Nije provjeren"), ("ticket_status", "Nije otvoren"),
++                                 ("ticket_where", ""), ("ticket_date", ""), ("ticket_stage", "—"), ("status_note", "")):
++                values[key] = self.record.get(key, default)
++        else:
++            values.update({"account_status": "Nije provjeren", "ticket_status": "Nije otvoren", "ticket_where": "",
++                           "ticket_date": "", "ticket_stage": "—", "status_note": ""})
+         values["attachments"] = self.attachments.copy()
+         try:
+             values["attachments"].extend(self.app.vault.save_attachment(source, values["id"]) for source in self.pending_attachments)
