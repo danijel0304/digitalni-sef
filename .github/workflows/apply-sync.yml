@@ -1,0 +1,34 @@
+name: Apply uploaded Digitalni sef update
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  apply-sync:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply uploaded source changes
+        run: |
+          git apply .sync/app_update_1.patch
+          git apply .sync/app_update_2.patch
+          git apply .sync/app_update_3.patch
+          git apply .sync/spec_update.patch
+      - name: Verify Python syntax
+        run: python -m compileall -q app.py service_catalog.py self_updater.py
+      - name: Commit synchronized project
+        run: |
+          rm -rf .sync
+          rm -f .github/workflows/apply-sync.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Update account status and ticket tracking"
+          git push origin main
